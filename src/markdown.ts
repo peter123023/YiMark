@@ -289,7 +289,9 @@ md.renderer.rules.blockquote_open = ((tokens, idx, _o, env) => {
   if (tip) {
     // 提示条：整体用 callout 令牌渲染（含边框/底色/圆角/边距）
     const c = th.callout;
-    const title = tokens[idx].meta?.title;
+    // 无标题时用默认标题兜底 —— 否则 `> [!tip]` 不带标题的盒子首行是空的，
+    // 标记被吃掉又没有任何视觉元素，看起来就像没渲染
+    const title = tokens[idx].meta?.title ?? '提示';
     let s = `<blockquote data-tip${line != null ? ` data-line="${line}"` : ''} style="${st({
       'border-left': c.borderLeft,
       background: c.background,
@@ -299,14 +301,12 @@ md.renderer.rules.blockquote_open = ((tokens, idx, _o, env) => {
       margin: c.margin,
       ...(c.extra ?? {}),
     })}">`;
-    if (title) {
-      s += `<span style="${st({
-        display: 'block',
-        'font-weight': '700',
-        color: c.badgeColor ?? th.accent,
-        'margin-bottom': '8px',
-      })}">${esc(title)}</span>`;
-    }
+    s += `<span style="${st({
+      display: 'block',
+      'font-weight': '700',
+      color: c.badgeColor ?? th.accent,
+      'margin-bottom': '8px',
+    })}">💡 ${esc(title)}</span>`;
     return s;
   }
   const q = th.quote;

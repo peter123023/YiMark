@@ -2,7 +2,6 @@ import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import EditorPane from './components/EditorPane';
 import FileTree from './components/FileTree';
 import PreviewPane from './components/PreviewPane';
-import ThemeRail from './components/ThemeRail';
 import Toolbar from './components/Toolbar';
 import {
   collectImageRefs,
@@ -16,17 +15,45 @@ import { downloadBlob, exportBackupZip, exportDraftMarkdown, importFiles, safeFi
 import { renderLongImage } from './longimage';
 import { SAMPLE_MARKDOWN } from './sample';
 import { getDensity, getTheme } from './theme';
+import { DEFAULT_ACCENT_ID, getAccent, MODE_DEFAULTS } from './accents';
 import { deleteImage, getAllImages, putImage } from './imagedb';
 import { createScrollSyncChannel } from './scrollSync';
 import './styles.css';
 
-const STORAGE_KEY = 'wechat-mp-editor:md';
-const STORAGE_THEME = 'wechat-mp-editor:theme';
-const STORAGE_DENSITY = 'wechat-mp-editor:density';
-const STORAGE_DRAFTS = 'wechat-mp-editor:drafts';
-const STORAGE_ACTIVE_DRAFT = 'wechat-mp-editor:active-draft';
+const STORAGE_KEY = 'yimark:md';
+const STORAGE_THEME = 'yimark:theme';
+const STORAGE_DENSITY = 'yimark:density';
+const STORAGE_DRAFTS = 'yimark:drafts';
+const STORAGE_ACTIVE_DRAFT = 'yimark:active-draft';
+/** 界面配色（见 accents.ts） */
+const STORAGE_ACCENT = 'yimark:accent';
+/** 工作区模式（edit/split/preview），刷新后要停在用户上次用的那档 */
+const STORAGE_VIEW_MODE = 'yimark:view-mode';
 /** 旧版图片注册表存放位置（localStorage），仅用于一次性迁移 */
-const STORAGE_IMAGES = 'wechat-mp-editor:imgs';
+const STORAGE_IMAGES = 'yimark:imgs';
+/** 改名前的 key 前缀（Mars Editor / wechat-mp-editor 时代），迁移完即弃 */
+const LEGACY_PREFIX = 'wechat-mp-editor:';
+
+/**
+ * 一次性迁移：把改名前的 key 整体搬到新前缀下。
+ * 只在目标 key 不存在时写入，老用户草稿/主题/排版密度不会因为改名消失。
+ */
+function migrateStorageKeys(): void {
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (key == null || !key.startsWith(LEGACY_PREFIX)) continue;
+    const next = `yimark:${key.slice(LEGACY_PREFIX.length)}`;
+    const value = localStorage.getItem(key);
+    if (value != null && localStorage.getItem(next) == null) localStorage.setItem(next, value);
+    localStorage.removeItem(key);
+    i--;
+  }
+}
+try {
+  migrateStorageKeys();
+} catch {
+  // 存储不可用（隐私模式等）时跳过，不影响当次使用
+}
 /** 编辑器侧最小宽度（拖拽时保留，预览因此可达 desktop 宽度） */
 const MIN_EDITOR_PX = 180;
 /** 预览最小宽度（容纳真实手机宽度） */
@@ -113,11 +140,28 @@ export default function App() {
   const [images, setImages] = useState<Record<string, string>>({});
   const [themeId, setThemeId] = useState<string>(() => localStorage.getItem(STORAGE_THEME) ?? 'classic');
   const [densityId, setDensityId] = useState<string>(() => localStorage.getItem(STORAGE_DENSITY) ?? 'standard');
+  /** 界面配色（外壳强调色），与文章主题是两套东西 */
+  const [accentId, setAccentId] = useState<string>(
+    () => localStorage.getItem(STORAGE_ACCENT) ?? DEFAULT_ACCENT_ID,
+  );
   const [status, setStatus] = useState<string | null>(null);
   /** 导出进行中（长图 / 备份包都要跑一会儿） */
   const [exporting, setExporting] = useState(false);
   /** 对照 / 预览模式 */
-  const [viewMode, setViewMode] = useState<'split' | 'preview'>('split');
+  /** 编辑 = 渲染后直接改（Live Preview）；对照 = 源码 + 预览并排；预览 = 只看成品 */
+  const [viewMode, setViewMode] = useState<'edit' | 'split' | 'preview'>(() => {
+    const saved = localStorage.getItem(STORAGE_VIEW_MODE);
+    return saved === 'edit' || saved === 'split' || saved === 'preview' ? saved : 'split';
+  });
+  /** 切档即落盘：localStorage 里存过坏值时读侧已经兜底，这里无需再校验 */
+  const changeViewMode = (m: 'edit' | 'split' | 'preview') => {
+    setViewMode(m);
+    try {
+      localStorage.setItem(STORAGE_VIEW_MODE, m);
+    } catch {
+      // 存不进去不影响本次会话使用
+    }
+  };
   /** 编辑器侧宽度（百分比，默认预览最小宽度） */
   const [editorPct, setEditorPct] = useState<number>(() => {
     const w = window.innerWidth;
@@ -212,6 +256,81 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem(STORAGE_DENSITY, densityId);
   }, [densityId]);
+
+  /**
+   * 应用界面配色：把强调色与纸面色写成 CSS 变量挂在 <html> 上。
+   * 走变量而不是切 class，是为了让新配色即时生效、且不用在 CSS 里再抄一遍色值。
+   * 顺手同步 theme-color（手机浏览器地址栏取色）。
+   */
+  useEffect(() => {
+    const a = getAccent(accentId);
+    const m = MODE_DEFAULTS[a.mode];
+    const root = document.documentElement;
+    const vars: Record<string, string> = {
+      '--accent': a.accent,
+      '--accent-strong': a.strong,
+      '--accent-soft': a.soft,
+      // 纸面三件套：画布底 + 两团氛围光，只换色相、明度保持一致
+      '--bg': a.bg,
+      '--bg-glow-1': a.glow1,
+      '--bg-glow-2': a.glow2,
+      '--panel': a.panel,
+      '--panel-solid': a.panelSolid,
+      // 墨色相：冷色系配冷墨，描边才不会在冷纸底上泛棕
+      '--tint': a.tint,
+      // 中性色与材质整套跟着亮度模式走（深色下墨色、阴影、噪点都要反过来）
+      '--ink': m.ink,
+      '--muted': m.muted,
+      '--faint': m.faint,
+      '--noise': m.noise,
+      '--shadow-sm': m.shadowSm,
+      '--shadow-lg': m.shadowLg,
+      '--shadow-pop': m.shadowPop,
+      '--btn-bg': m.btnBg,
+      '--on-accent': m.onAccent,
+      '--warn': m.warn,
+      '--danger': m.danger,
+    };
+    for (const [k, v] of Object.entries(vars)) root.style.setProperty(k, v);
+    // 让原生滚动条、表单控件也跟着深浅走
+    root.style.colorScheme = a.mode;
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', a.accent);
+    localStorage.setItem(STORAGE_ACCENT, accentId);
+  }, [accentId]);
+
+  /**
+   * 把文章主题里引用块/提示条的样式铺成 CSS 变量 —— 编辑态要与预览同色（真所见即所得）。
+   * CodeMirror 的样式只认变量，切主题时改这里即可同时生效。
+   * 圆角拆成四角：编辑器按行染色，首行取上两角、末行取下两角，中间行保持方正。
+   */
+  useEffect(() => {
+    const root = document.documentElement;
+    const corners = (r: string): [string, string, string, string] => {
+      const v = r.trim().split(/\s+/);
+      if (v.length === 1) return [v[0], v[0], v[0], v[0]];
+      if (v.length === 2) return [v[0], v[1], v[0], v[1]];
+      return [v[0], v[1], v[2], v[3] ?? v[1]];
+    };
+    const spread = (
+      p: 'q' | 'c',
+      s: { background: string; color: string; borderLeft: string; borderRadius: string },
+    ) => {
+      const [tl, tr, br, bl] = corners(s.borderRadius);
+      const vars: Record<string, string> = {
+        [`--${p}-border`]: s.borderLeft,
+        [`--${p}-bg`]: s.background,
+        [`--${p}-color`]: s.color,
+        [`--${p}-rtl`]: tl,
+        [`--${p}-rtr`]: tr,
+        [`--${p}-rbl`]: bl,
+        [`--${p}-rbr`]: br,
+      };
+      for (const [k, v] of Object.entries(vars)) root.style.setProperty(k, v);
+    };
+    spread('q', theme.quote);
+    spread('c', theme.callout);
+    root.style.setProperty('--q-style', theme.quote.fontStyle ?? 'normal');
+  }, [theme]);
 
   /** 安全保存草稿列表，返回是否成功 */
   const saveDraftsSafe = (): boolean => {
@@ -398,7 +517,7 @@ export default function App() {
     try {
       await ensureHighlighter();
       const { body } = renderArticle(markdown, theme, images, density);
-      const blob = await renderLongImage({ body, theme, author: '火星' });
+      const blob = await renderLongImage({ body, theme, author: '易码' });
       downloadBlob(`${safeFileName(activeDraft?.name ?? '长图')}.png`, blob);
       flash('长图已导出');
     } catch (err) {
@@ -482,15 +601,23 @@ export default function App() {
    */
   const scrollSync = useRef(createScrollSyncChannel()).current;
 
+  // 编辑与对照都保留右侧预览（区别只在左侧是渲染态还是源码），只有「预览」模式收起源码
   const isPreviewOnly = viewMode === 'preview';
+  const isLive = viewMode === 'edit';
 
   return (
     <div className="app">
       <Toolbar
         viewMode={viewMode}
-        onViewMode={setViewMode}
+        onViewMode={changeViewMode}
         status={status}
         onCopy={handleCopy}
+        accentId={accentId}
+        onAccentChange={setAccentId}
+        themeId={themeId}
+        onThemeChange={setThemeId}
+        densityId={densityId}
+        onDensityChange={setDensityId}
         onImport={(files) => void handleImport(files)}
         onExportMarkdown={handleExportMarkdown}
         onExportBackup={() => void handleExportBackup()}
@@ -498,12 +625,6 @@ export default function App() {
         exporting={exporting}
       />
       <main className={`workspace ${isPreviewOnly ? 'mode-preview' : ''}`}>
-        <ThemeRail
-          themeId={themeId}
-          onThemeChange={setThemeId}
-          densityId={densityId}
-          onDensityChange={setDensityId}
-        />
         <FileTree
           drafts={drafts}
           activeId={activeId}
@@ -528,6 +649,8 @@ export default function App() {
             sync={scrollSync}
             jumpRequest={jumpRequest}
             collapsed={isPreviewOnly}
+            live={isLive}
+            images={images}
             widthPct={editorPct}
           />
           <div

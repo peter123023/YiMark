@@ -1,5 +1,5 @@
 /* ============================================================
-   火星编辑器 · 应用外壳样式
+   易码 Yimark · 应用外壳样式
    暖纸底 + 氛围光 + 噪点 + 毛玻璃 + 陶土橙强调
    （文章正文样式全部内联，本文件不含正文样式）
    ============================================================ */
@@ -10,8 +10,11 @@
   --bg-glow-2: #eae8e0;      /* 暖沙氛围光 */
   --panel: rgba(255, 253, 250, 0.82);
   --panel-solid: #fffdfa;
-  --border: rgba(60, 54, 44, 0.1);
-  --border-strong: rgba(60, 54, 44, 0.18);
+  /* 描边 / 浅底 / 分割线共用的"墨"色相，只给 rgb 三元组，由各处自带透明度。
+     跟着界面配色走：暖色系用暖墨，冷色系用冷墨，避免在冷纸底上出现发棕的灰边 */
+  --tint: 60, 54, 44;
+  --border: rgba(var(--tint), 0.1);
+  --border-strong: rgba(var(--tint), 0.18);
   --ink: #34302a;
   --muted: #8a857a;
   --faint: #b0ab9f;
@@ -20,12 +23,25 @@
   --accent-soft: #f9eee7;
   --shadow-lg: 0 24px 64px rgba(52, 40, 28, 0.14), 0 2px 8px rgba(52, 40, 28, 0.05);
   --shadow-sm: 0 1px 2px rgba(52, 40, 28, 0.06);
+  /* 浮层（下拉菜单）投影 */
+  --shadow-pop: 0 12px 32px rgba(45, 40, 30, 0.14);
+  /* 噪点层不透明度；深色模式会调低，否则整屏发灰 */
+  --noise: 0.5;
+  /* 普通按钮底 / 主色块上的文字色：深浅模式各一套，由 accents.ts 注入 */
+  --btn-bg: rgba(255, 253, 250, 0.7);
+  --on-accent: #ffffff;
+  /* 警示色：深色模式下要整体提亮，否则深蓝底上几乎看不见 */
+  --warn: #a8700c;
+  --danger: #b3402f;
   --radius-lg: 18px;
   --radius-md: 12px;
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
   --mono: ui-monospace, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
   --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
     'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  /* 黑体：品牌字标用。中文优先命中黑体系，与文章标题的衬线拉开区别 */
+  --heiti: 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans SC',
+    'Source Han Sans SC', -apple-system, sans-serif;
   --serif: Georgia, 'Songti SC', 'SimSun', 'Times New Roman', serif;
 }
 
@@ -60,7 +76,7 @@ body::after {
   inset: 0;
   pointer-events: none;
   z-index: 90;
-  opacity: 0.5;
+  opacity: var(--noise);
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E");
 }
 
@@ -112,7 +128,7 @@ button {
 }
 
 .title {
-  font-family: var(--serif);
+  font-family: var(--heiti);
   font-weight: 700;
   font-size: 15px;
   letter-spacing: 0.6px;
@@ -130,7 +146,7 @@ button {
 /* 对照 / 预览 分段控件 */
 .segmented {
   display: inline-flex;
-  background: rgba(60, 54, 44, 0.055);
+  background: rgba(var(--tint), 0.055);
   border-radius: 8px;
   padding: 2px;
   gap: 1px;
@@ -157,68 +173,45 @@ button {
   font-weight: 600;
 }
 
-/* ---------------- 左侧主题竖栏 ---------------- */
+/* ---------------- 顶栏「主题」下拉 ---------------- */
 
-.theme-rail {
-  flex: none;
-  width: 96px;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  margin-right: 14px;
-  /* 顶部不留内边距：让「主题」标题与其它三个面板头落在同一条基线上 */
-  padding: 0 10px 10px;
-  background: var(--panel);
-  -webkit-backdrop-filter: blur(14px) saturate(1.3);
-  backdrop-filter: blur(14px) saturate(1.3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
-  transition: box-shadow 0.25s var(--ease), border-color 0.25s var(--ease);
-}
-
-.theme-rail:hover {
-  box-shadow: 0 4px 20px rgba(52, 40, 28, 0.08);
-  border-color: rgba(60, 54, 44, 0.14);
-}
-
-.rail-head {
-  flex: none;
-  display: flex;
-  align-items: center;
-  min-height: 40px;
-  padding: 0 4px;
-  margin-bottom: 8px;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 1.1px;
-  color: var(--muted);
-}
-
-.rail-list {
-  flex: 1;
-  min-height: 0;
+/* 刻意不复用 .dropdown-menu：那套 button 样式会覆盖主题卡片的 padding 与 hover，
+   改起来要不断提权，不如独立一份面板外观 */
+.theme-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  width: 322px;
+  /* 主题多了就自己滚，不要顶出视口 */
+  max-height: calc(100vh - 96px);
   overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  /* 主题较多时留出滚动条空间，避免卡片被裁 */
-  padding-right: 2px;
-}
-
-.rail-section {
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
+  padding: 10px;
+  background: var(--panel-solid);
+  -webkit-backdrop-filter: blur(18px) saturate(1.4);
+  backdrop-filter: blur(18px) saturate(1.4);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow-pop);
+  z-index: 80;
+  animation: menu-in 0.14s var(--ease);
+  transform-origin: top right;
 }
 
 /* 分区小标题：比面板标题更轻，只做归类不抢注意力 */
-.rail-section-label {
-  padding: 0 2px 1px;
+.menu-section-label {
+  padding: 0 2px 6px;
   font-size: 9.5px;
   font-weight: 600;
   letter-spacing: 1px;
   color: var(--faint);
+}
+
+/* 卡片网格：三列正好一排看完浅色，竖向空间比原来的竖栏省得多 */
+.theme-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 12px;
 }
 
 /* 主题卡片：迷你纸样 + 名称 */
@@ -298,7 +291,7 @@ button {
 .btn {
   height: 32px;
   border: 1px solid var(--border);
-  background: rgba(255, 253, 250, 0.7);
+  background: var(--btn-bg);
   border-radius: 8px;
   padding: 0 12px;
   font-size: 12.5px;
@@ -318,7 +311,7 @@ button {
 }
 
 .btn:active {
-  background: rgba(60, 54, 44, 0.05);
+  background: rgba(var(--tint), 0.05);
 }
 
 .btn svg {
@@ -329,7 +322,7 @@ button {
 .btn.primary {
   background: var(--accent);
   border-color: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   font-weight: 600;
 }
 
@@ -373,7 +366,7 @@ button {
 
 .file-tree:hover {
   box-shadow: 0 4px 20px rgba(52, 40, 28, 0.08);
-  border-color: rgba(60, 54, 44, 0.14);
+  border-color: rgba(var(--tint), 0.14);
 }
 
 .tree-head {
@@ -438,7 +431,7 @@ button {
 }
 
 .tree-folder:hover {
-  background: rgba(60, 54, 44, 0.05);
+  background: rgba(var(--tint), 0.05);
 }
 
 .tree-folder svg {
@@ -455,7 +448,7 @@ button {
   font-size: 10px;
   font-weight: 500;
   color: var(--faint);
-  background: rgba(60, 54, 44, 0.06);
+  background: rgba(var(--tint), 0.06);
   border-radius: 999px;
   padding: 1px 6px;
 }
@@ -479,7 +472,7 @@ button {
 }
 
 .tree-file:hover {
-  background: rgba(60, 54, 44, 0.05);
+  background: rgba(var(--tint), 0.05);
 }
 
 .tree-file.active {
@@ -570,7 +563,7 @@ button {
 }
 
 .tree-file-actions button:hover {
-  background: rgba(255, 253, 250, 0.9);
+  background: var(--panel-solid);
   color: var(--accent-strong);
 }
 
@@ -592,7 +585,7 @@ button {
 }
 
 .tree-file.unused .tree-file-meta {
-  color: #a8700c;
+  color: var(--warn);
 }
 
 .tree-empty {
@@ -679,7 +672,7 @@ button {
   width: 3px;
   height: 44px;
   border-radius: 999px;
-  background: rgba(60, 54, 44, 0.18);
+  background: rgba(var(--tint), 0.18);
 }
 
 .split-bar:hover::after,
@@ -711,7 +704,7 @@ button {
 
 .editor-side:hover {
   box-shadow: 0 4px 20px rgba(52, 40, 28, 0.08);
-  border-color: rgba(60, 54, 44, 0.14);
+  border-color: rgba(var(--tint), 0.14);
 }
 
 /* 拖拽中：禁用宽度过渡，保证分割条跟手 */
@@ -730,6 +723,7 @@ button {
   pointer-events: none;
 }
 
+/* 只有「预览」模式收起源码面板，编辑 / 对照都保留左右两栏 */
 .workspace.mode-preview .split-bar {
   display: none;
 }
@@ -753,7 +747,7 @@ button {
 
 .preview-side:hover {
   box-shadow: 0 4px 20px rgba(52, 40, 28, 0.08);
-  border-color: rgba(60, 54, 44, 0.14);
+  border-color: rgba(var(--tint), 0.14);
 }
 
 /* 面板头 */
@@ -825,11 +819,11 @@ button {
 
 /* 接近 / 超出微信 2 万字上限：只换文字颜色 */
 .pane-stat.count-warn {
-  color: #a8700c;
+  color: var(--warn);
 }
 
 .pane-stat.count-over {
-  color: #b3402f;
+  color: var(--danger);
   font-weight: 600;
 }
 
@@ -838,7 +832,7 @@ button {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  color: #96592c;
+  color: var(--warn);
 }
 
 .pane-stat.warn::before {
@@ -911,12 +905,12 @@ button {
   top: calc(100% + 6px);
   left: 0;
   min-width: 148px;
-  background: rgba(255, 253, 250, 0.96);
+  background: var(--panel-solid);
   -webkit-backdrop-filter: blur(18px) saturate(1.4);
   backdrop-filter: blur(18px) saturate(1.4);
   border: 1px solid var(--border);
   border-radius: 10px;
-  box-shadow: 0 12px 32px rgba(45, 40, 30, 0.14);
+  box-shadow: var(--shadow-pop);
   padding: 4px;
   z-index: 50;
   animation: menu-in 0.14s var(--ease);
@@ -1131,7 +1125,7 @@ button {
   gap: 8px;
   padding: 9px 14px;
   background: #f4f1eb;
-  border-bottom: 1px solid rgba(60, 54, 44, 0.1);
+  border-bottom: 1px solid rgba(var(--tint), 0.1);
   position: relative;
 }
 
@@ -1752,7 +1746,7 @@ button {
 .preview-side[data-width='desktop'] .phone-screen {
   width: 100%;
   height: 100%;
-  border: 1px solid rgba(60, 54, 44, 0.14);
+  border: 1px solid rgba(var(--tint), 0.14);
   border-radius: 14px;
   box-sizing: border-box;
   box-shadow: var(--shadow-lg);
@@ -1791,6 +1785,8 @@ button {
   gap: 8px;
   background: #332f29;
   color: #faf8f3;
+  /* 深色模式下这颗药丸会和画布糊在一起，靠这圈描边拎出来 */
+  border: 1px solid rgba(var(--tint), 0.16);
   border-radius: 999px;
   padding: 11px 20px;
   font-size: 13px;
@@ -1825,7 +1821,7 @@ button {
   .code-edit .cm-scroller,
   .phone-stage,
   .article-scroll,
-  .rail-list,
+  .theme-dropdown,
   .tree-body,
   .outline-drawer {
     scrollbar-width: thin;
@@ -1836,7 +1832,7 @@ button {
 .code-edit .cm-scroller::-webkit-scrollbar,
 .phone-stage::-webkit-scrollbar,
 .article-scroll::-webkit-scrollbar,
-.rail-list::-webkit-scrollbar,
+.theme-dropdown::-webkit-scrollbar,
 .tree-body::-webkit-scrollbar,
 .outline-drawer::-webkit-scrollbar {
   width: 9px;
@@ -1846,7 +1842,7 @@ button {
 .code-edit .cm-scroller::-webkit-scrollbar-track,
 .phone-stage::-webkit-scrollbar-track,
 .article-scroll::-webkit-scrollbar-track,
-.rail-list::-webkit-scrollbar-track,
+.theme-dropdown::-webkit-scrollbar-track,
 .tree-body::-webkit-scrollbar-track,
 .outline-drawer::-webkit-scrollbar-track {
   background: transparent;
@@ -1855,7 +1851,7 @@ button {
 .code-edit .cm-scroller::-webkit-scrollbar-thumb,
 .phone-stage::-webkit-scrollbar-thumb,
 .article-scroll::-webkit-scrollbar-thumb,
-.rail-list::-webkit-scrollbar-thumb,
+.theme-dropdown::-webkit-scrollbar-thumb,
 .tree-body::-webkit-scrollbar-thumb,
 .outline-drawer::-webkit-scrollbar-thumb {
   background: rgba(90, 82, 68, 0.16);
@@ -1869,7 +1865,7 @@ button {
 .code-edit .cm-scroller:hover::-webkit-scrollbar-thumb,
 .phone-stage:hover::-webkit-scrollbar-thumb,
 .article-scroll:hover::-webkit-scrollbar-thumb,
-.rail-list:hover::-webkit-scrollbar-thumb,
+.theme-dropdown:hover::-webkit-scrollbar-thumb,
 .tree-body:hover::-webkit-scrollbar-thumb,
 .outline-drawer:hover::-webkit-scrollbar-thumb {
   background: rgba(90, 82, 68, 0.3);
@@ -1879,7 +1875,7 @@ button {
 .code-edit .cm-scroller::-webkit-scrollbar-thumb:hover,
 .phone-stage::-webkit-scrollbar-thumb:hover,
 .article-scroll::-webkit-scrollbar-thumb:hover,
-.rail-list::-webkit-scrollbar-thumb:hover,
+.theme-dropdown::-webkit-scrollbar-thumb:hover,
 .tree-body::-webkit-scrollbar-thumb:hover,
 .outline-drawer::-webkit-scrollbar-thumb:hover {
   background: rgba(90, 82, 68, 0.45);
@@ -1899,23 +1895,12 @@ button {
   .workspace {
     flex-direction: column;
   }
-  /* 窄屏：主题栏从竖列改为顶部横向滑条 */
-  .theme-rail {
-    width: 100%;
-    margin: 0 0 12px;
-    padding: 10px 12px;
+  /* 窄屏：主题下拉跟着收窄，卡片改两列 */
+  .theme-dropdown {
+    width: min(322px, calc(100vw - 40px));
   }
-  .rail-head {
-    padding-bottom: 8px;
-  }
-  .rail-list {
-    flex-direction: row;
-    overflow-x: auto;
-    overflow-y: hidden;
-  }
-  .theme-card {
-    flex: none;
-    width: 76px;
+  .theme-grid {
+    grid-template-columns: repeat(2, 1fr);
   }
   /* 窄屏：文件树也转为横向条带，避免吃掉过多竖向空间 */
   .file-tree {
@@ -1974,12 +1959,12 @@ button {
   top: calc(100% + 6px);
   right: 0;
   min-width: 178px;
-  background: rgba(255, 253, 250, 0.96);
+  background: var(--panel-solid);
   -webkit-backdrop-filter: blur(18px) saturate(1.4);
   backdrop-filter: blur(18px) saturate(1.4);
   border: 1px solid var(--border);
   border-radius: 10px;
-  box-shadow: 0 12px 32px rgba(45, 40, 30, 0.14);
+  box-shadow: var(--shadow-pop);
   padding: 4px;
   z-index: 80;
   animation: menu-in 0.14s var(--ease);
@@ -2026,23 +2011,269 @@ button {
   background: var(--border);
 }
 
-/* ---------------- 主题栏底部：排版密度 ---------------- */
+/* ---------------- 直接编辑模式（Live Preview） ----------------
+   装饰由 src/livePreview.ts 生成，这里只决定它们长什么样。
+   字号用 em：标题跟着正文基准缩放，改密度档位时不用同步改这些值。 */
 
-.rail-foot {
+/* 直接编辑时收起行号、换成正文字体 —— 视觉上更像"在写文章"而不是"在写源码" */
+.editor-side.live .cm-gutters {
+  display: none;
+}
+
+.editor-side.live .cm-scroller {
+  font-family: var(--sans);
+  font-size: 15.5px;
+  line-height: 1.85;
+}
+
+.editor-side.live .cm-content {
+  padding: 22px 28px 24px 32px;
+  max-width: 800px;
+}
+
+/*
+ * 标题的行间距必须用 padding 而不是 margin：
+ * CodeMirror 自己维护行高表来把鼠标坐标换算成文档位置，测量用 getBoundingClientRect，
+ * 量得到 padding、量不到 margin。用 margin 会让它以为文档比实际短，点哪儿都往下偏一行。
+ */
+.editor-side.live .cm-lp-h1,
+.editor-side.live .cm-lp-h2,
+.editor-side.live .cm-lp-h3,
+.editor-side.live .cm-lp-h4,
+.editor-side.live .cm-lp-h5,
+.editor-side.live .cm-lp-h6 {
+  font-weight: 700;
+  padding-top: 0.7em;
+  padding-bottom: 0.3em;
+}
+
+.editor-side.live .cm-lp-h1 {
+  font-size: 1.6em;
+}
+
+.editor-side.live .cm-lp-h2 {
+  font-size: 1.4em;
+}
+
+.editor-side.live .cm-lp-h3 {
+  font-size: 1.24em;
+}
+
+.editor-side.live .cm-lp-h4 {
+  font-size: 1.12em;
+}
+
+.editor-side.live .cm-lp-h5,
+.editor-side.live .cm-lp-h6 {
+  font-size: 1em;
+  color: var(--muted);
+}
+
+/*
+ * 引用：左侧竖线必须看得见。
+ * 之前用 --accent-soft（极浅强调色）几乎与纸底同色，等于没画。
+ * 改成墨色的 22% —— 足够成型，又不会像强调色那样跳。
+ */
+.editor-side.live .cm-lp-quote {
+  border-left: var(--q-border, 3px solid rgba(var(--tint), 0.22));
+  background: var(--q-bg, transparent);
+  color: var(--q-color, var(--muted));
+  font-style: var(--q-style, normal);
+  padding-left: 14px;
+}
+
+/* 主题引用块的圆角铺在首尾行上（变量由 App 随文章主题写入） */
+.editor-side.live .cm-lp-quote-first {
+  border-top-left-radius: var(--q-rtl, 0);
+  border-top-right-radius: var(--q-rtr, 0);
+}
+.editor-side.live .cm-lp-quote-last {
+  border-bottom-left-radius: var(--q-rbl, 0);
+  border-bottom-right-radius: var(--q-rbr, 0);
+}
+
+/*
+ * 提示条 > [!tip] xxx：预览里是个主题色盒子，编辑器里也不该露着 [!tip] 原始标记。
+ * 必须排在 .cm-lp-quote 之后 —— 两者同权重，靠源码顺序覆盖整套盒样式。
+ */
+.editor-side.live .cm-lp-callout {
+  border-left: var(--c-border, 3px solid var(--accent));
+  background: var(--c-bg, rgba(var(--tint), 0.03));
+  color: var(--c-color, var(--ink));
+}
+
+/* 盒子首尾收口（圆角只出现在整个盒子的上下两端，行与行之间保持方正） */
+.editor-side.live .cm-lp-callout-first,
+.editor-side.live .cm-lp-callout-open {
+  border-top-left-radius: var(--c-rtl, 6px);
+  border-top-right-radius: var(--c-rtr, 0);
+}
+.editor-side.live .cm-lp-callout-last {
+  border-bottom-left-radius: var(--c-rbl, 0);
+  border-bottom-right-radius: var(--c-rbr, 6px);
+}
+
+/* 无标题提示条的灯泡：预览里是「💡 提示」标题行，编辑器对应标记位 */
+.editor-side.live .cm-lp-tip-icon {
+  color: var(--accent);
+  margin-right: 2px;
+}
+
+.editor-side.live .cm-lp-li {
+  padding-left: 2px;
+}
+
+/* 列表符号走中性灰：强调色加粗会跟正文抢注意力，一屏十几个点就很吵 */
+.editor-side.live .cm-lp-bullet {
+  color: var(--muted);
+  font-weight: 400;
+  margin-right: 2px;
+}
+
+/* 勾选框：点了直接改文档里的 [ ] / [x] */
+.editor-side.live .cm-lp-checkbox {
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  margin-right: 5px;
+  vertical-align: -2px;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 3px;
+  color: var(--on-accent);
+  font-size: 10px;
+  line-height: 11px;
+  text-align: center;
+  cursor: pointer;
+}
+
+.editor-side.live .cm-lp-checkbox.checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.editor-side.live .cm-lp-codeblock {
+  background: rgba(var(--tint), 0.045);
+  font-family: var(--mono);
+  font-size: 0.86em;
+  padding-left: 16px;
+  padding-right: 16px;
+}
+
+/* 围栏那三行反引号本身不需要被读，弱化成代码块的上下框 */
+.editor-side.live .cm-lp-fence {
+  color: var(--faint);
+}
+
+/* 同理：widget 的上下留白也走 padding，线本身交给 ::before 画 */
+.editor-side.live .cm-lp-hr {
+  display: block;
+  padding: 14px 0;
+}
+
+.editor-side.live .cm-lp-hr::before {
+  content: '';
+  display: block;
+  height: 1px;
+  background: var(--border-strong);
+}
+
+.editor-side.live .cm-lp-strong {
+  font-weight: 700;
+}
+
+.editor-side.live .cm-lp-em {
+  font-style: italic;
+}
+
+.editor-side.live .cm-lp-del {
+  text-decoration: line-through;
+  color: var(--muted);
+}
+
+/* 高亮用半透明黄：深色纸底上也不会变成一块死白 */
+.editor-side.live .cm-lp-mark {
+  background: rgba(250, 204, 21, 0.32);
+  border-radius: 3px;
+}
+
+.editor-side.live .cm-lp-code {
+  font-family: var(--mono);
+  font-size: 0.86em;
+  background: rgba(var(--tint), 0.06);
+  border-radius: 4px;
+  padding: 1px 4px;
+}
+
+.editor-side.live .cm-lp-link {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.editor-side.live .cm-lp-fnref {
+  color: var(--accent);
+  font-size: 0.78em;
+  vertical-align: super;
+}
+
+.editor-side.live .cm-lp-image {
+  display: block;
+  padding: 6px 0;
+}
+
+.editor-side.live .cm-lp-image img {
+  display: block;
+  max-width: 100%;
+  border-radius: 6px;
+}
+
+/* ---------------- 顶栏「界面配色」 ---------------- */
+
+/* 色点：触发按钮上代表当前配色，菜单里代表可选配色 */
+.accent-dot {
   flex: none;
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  margin-top: 10px;
-  padding-top: 10px;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  /* 浅色系在暖纸底上要靠这圈内描边才立得住 */
+  box-shadow: inset 0 0 0 1px rgba(52, 40, 28, 0.16);
+}
+
+.accent-dropdown {
+  min-width: 152px;
+}
+
+.accent-item.active {
+  font-weight: 600;
+}
+
+/* 勾号靠右，不与色点、色名抢读 */
+.accent-check {
+  margin-left: auto;
+  color: var(--accent);
+}
+
+/* ---------------- 主题下拉底部：排版密度 ---------------- */
+
+.theme-menu-foot {
+  padding-top: 9px;
   border-top: 1px solid var(--border);
+}
+
+/* 下拉里横向排：竖排会把面板拉得过高 */
+.density-group.row {
+  flex-direction: row;
+}
+
+.density-group.row .density-btn {
+  flex: 1;
+  text-align: center;
 }
 
 .density-group {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  background: rgba(60, 54, 44, 0.055);
+  background: rgba(var(--tint), 0.055);
   border-radius: 8px;
   padding: 2px;
 }
