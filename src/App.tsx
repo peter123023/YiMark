@@ -298,40 +298,6 @@ export default function App() {
     localStorage.setItem(STORAGE_ACCENT, accentId);
   }, [accentId]);
 
-  /**
-   * 把文章主题里引用块/提示条的样式铺成 CSS 变量 —— 编辑态要与预览同色（真所见即所得）。
-   * CodeMirror 的样式只认变量，切主题时改这里即可同时生效。
-   * 圆角拆成四角：编辑器按行染色，首行取上两角、末行取下两角，中间行保持方正。
-   */
-  useEffect(() => {
-    const root = document.documentElement;
-    const corners = (r: string): [string, string, string, string] => {
-      const v = r.trim().split(/\s+/);
-      if (v.length === 1) return [v[0], v[0], v[0], v[0]];
-      if (v.length === 2) return [v[0], v[1], v[0], v[1]];
-      return [v[0], v[1], v[2], v[3] ?? v[1]];
-    };
-    const spread = (
-      p: 'q' | 'c',
-      s: { background: string; color: string; borderLeft: string; borderRadius: string },
-    ) => {
-      const [tl, tr, br, bl] = corners(s.borderRadius);
-      const vars: Record<string, string> = {
-        [`--${p}-border`]: s.borderLeft,
-        [`--${p}-bg`]: s.background,
-        [`--${p}-color`]: s.color,
-        [`--${p}-rtl`]: tl,
-        [`--${p}-rtr`]: tr,
-        [`--${p}-rbl`]: bl,
-        [`--${p}-rbr`]: br,
-      };
-      for (const [k, v] of Object.entries(vars)) root.style.setProperty(k, v);
-    };
-    spread('q', theme.quote);
-    spread('c', theme.callout);
-    root.style.setProperty('--q-style', theme.quote.fontStyle ?? 'normal');
-  }, [theme]);
-
   /** 安全保存草稿列表，返回是否成功 */
   const saveDraftsSafe = (): boolean => {
     try {

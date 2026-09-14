@@ -2074,43 +2074,33 @@ button {
  * 之前用 --accent-soft（极浅强调色）几乎与纸底同色，等于没画。
  * 改成墨色的 22% —— 足够成型，又不会像强调色那样跳。
  */
+/*
+ * 编辑态引用走界面配色（左侧下拉那套），不跟文章主题走 ——
+ * 编辑器是写作者的工作台，预览/粘贴才是文章主题的主场。
+ */
 .editor-side.live .cm-lp-quote {
-  border-left: var(--q-border, 3px solid rgba(var(--tint), 0.22));
-  background: var(--q-bg, transparent);
-  color: var(--q-color, var(--muted));
-  font-style: var(--q-style, normal);
+  border-left: 3px solid rgba(var(--tint), 0.22);
   padding-left: 14px;
-}
-
-/* 主题引用块的圆角铺在首尾行上（变量由 App 随文章主题写入） */
-.editor-side.live .cm-lp-quote-first {
-  border-top-left-radius: var(--q-rtl, 0);
-  border-top-right-radius: var(--q-rtr, 0);
-}
-.editor-side.live .cm-lp-quote-last {
-  border-bottom-left-radius: var(--q-rbl, 0);
-  border-bottom-right-radius: var(--q-rbr, 0);
+  color: var(--muted);
 }
 
 /*
- * 提示条 > [!tip] xxx：预览里是个主题色盒子，编辑器里也不该露着 [!tip] 原始标记。
- * 必须排在 .cm-lp-quote 之后 —— 两者同权重，靠源码顺序覆盖整套盒样式。
+ * 提示条 > [!tip] xxx：预览里是个强调色盒子，编辑器里也不该露着 [!tip] 原始标记。
+ * 必须排在 .cm-lp-quote 之后 —— 两者同权重，靠源码顺序覆盖边框色。
  */
 .editor-side.live .cm-lp-callout {
-  border-left: var(--c-border, 3px solid var(--accent));
-  background: var(--c-bg, rgba(var(--tint), 0.03));
-  color: var(--c-color, var(--ink));
+  border-left-color: var(--accent);
+  background: rgba(var(--tint), 0.03);
+  color: var(--ink);
 }
 
 /* 盒子首尾收口（圆角只出现在整个盒子的上下两端，行与行之间保持方正） */
 .editor-side.live .cm-lp-callout-first,
 .editor-side.live .cm-lp-callout-open {
-  border-top-left-radius: var(--c-rtl, 6px);
-  border-top-right-radius: var(--c-rtr, 0);
+  border-top-left-radius: 6px;
 }
 .editor-side.live .cm-lp-callout-last {
-  border-bottom-left-radius: var(--c-rbl, 0);
-  border-bottom-right-radius: var(--c-rbr, 6px);
+  border-bottom-left-radius: 6px;
 }
 
 /* 无标题提示条的灯泡：预览里是「💡 提示」标题行，编辑器对应标记位 */

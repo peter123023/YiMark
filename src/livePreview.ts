@@ -334,7 +334,9 @@ function build(view: EditorView): DecorationSet {
     const body = doc.line(n).text.slice(quote[0].length);
     if (/^\[![a-zA-Z]+\]/.test(body)) {
       quoteRole[n] = 2;
-      boxFirst[n] = body.trim() ? 1 : 2;
+      // 标题有无要看标记之后是否还有内容 —— [!tip] 本身不是标题，
+      // 判错会把无标题盒子的灯泡 widget 弄丢，标记藏掉后整行变空
+      boxFirst[n] = body.replace(/^\[![a-zA-Z]+\]\s*/, '').trim() ? 1 : 2;
       inCallout = true;
     } else if (inCallout) {
       quoteRole[n] = 2;
@@ -381,16 +383,12 @@ function build(view: EditorView): DecorationSet {
           if (n === doc.lines || quoteRole[n + 1] !== 2 || boxFirst[n + 1]) {
             cls.push('cm-lp-callout-last');
           }
-        } else {
-          // 普通引用块同样标出首尾行，主题的底色圆角才不会切在中间行上
-          if (quoteRole[n - 1] !== 1) cls.push('cm-lp-quote-first');
-          if (n === doc.lines || quoteRole[n + 1] !== 1) cls.push('cm-lp-quote-last');
         }
         decos.push(Decoration.line({ class: cls.join(' ') }).range(line.from));
         const s = line.from + quote[1].length;
         decos.push(HIDE.range(s, s + quote[2].length));
 
-        // 提示条 > [!tip] xxx：连 [!tip] 一起藏掉，换成主题强调边框（与预览里的盒子对应）
+        // 提示条 > [!tip] xxx：连 [!tip] 一起藏掉，换成强调色边框（与预览里的盒子对应）
         if (boxFirst[n]) {
           const m = /^\[![a-zA-Z]+\]\s*/.exec(text.slice(quote[0].length));
           if (m) {
