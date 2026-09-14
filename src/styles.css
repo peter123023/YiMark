@@ -2077,11 +2077,11 @@ button {
 /*
  * 编辑态引用走界面配色（左侧下拉那套），不跟文章主题走 ——
  * 编辑器是写作者的工作台，预览/粘贴才是文章主题的主场。
- * 底色只比纸面深一点，和提示条盒子（0.03 + 强调边框）拉开层次。
+ * 边框/底色用半透明强调色：和提示条盒子（实色强调边框）同色系但更轻。
  */
 .editor-side.live .cm-lp-quote {
-  border-left: 3px solid rgba(var(--tint), 0.22);
-  background: rgba(var(--tint), 0.045);
+  border-left: 3px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 4%, transparent);
   padding-left: 14px;
   color: var(--muted);
 }
@@ -2125,9 +2125,9 @@ button {
   padding-left: 2px;
 }
 
-/* 列表符号走中性灰：强调色加粗会跟正文抢注意力，一屏十几个点就很吵 */
+/* 列表符号跟随界面配色强调色（用户约定：圆点要与左侧上部选的强调色一致） */
 .editor-side.live .cm-lp-bullet {
-  color: var(--muted);
+  color: var(--accent);
   font-weight: 400;
   margin-right: 2px;
 }
