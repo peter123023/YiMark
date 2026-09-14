@@ -2077,11 +2077,23 @@ button {
 /*
  * 编辑态引用走界面配色（左侧下拉那套），不跟文章主题走 ——
  * 编辑器是写作者的工作台，预览/粘贴才是文章主题的主场。
+ * 底色只比纸面深一点，和提示条盒子（0.03 + 强调边框）拉开层次。
  */
 .editor-side.live .cm-lp-quote {
   border-left: 3px solid rgba(var(--tint), 0.22);
+  background: rgba(var(--tint), 0.045);
   padding-left: 14px;
   color: var(--muted);
+}
+
+/* 引用块首尾行收口（圆角只出现在块的两端，行与行之间保持方正） */
+.editor-side.live .cm-lp-quote-first {
+  border-top-left-radius: 6px;
+  border-top-right-radius: 6px;
+}
+.editor-side.live .cm-lp-quote-last {
+  border-bottom-left-radius: 6px;
+  border-bottom-right-radius: 6px;
 }
 
 /*

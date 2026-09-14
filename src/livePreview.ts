@@ -383,6 +383,10 @@ function build(view: EditorView): DecorationSet {
           if (n === doc.lines || quoteRole[n + 1] !== 2 || boxFirst[n + 1]) {
             cls.push('cm-lp-callout-last');
           }
+        } else {
+          // 普通引用块同样标出首尾行：底色圆角只落在块的两端，中间行保持方正
+          if (quoteRole[n - 1] !== 1) cls.push('cm-lp-quote-first');
+          if (n === doc.lines || quoteRole[n + 1] !== 1) cls.push('cm-lp-quote-last');
         }
         decos.push(Decoration.line({ class: cls.join(' ') }).range(line.from));
         const s = line.from + quote[1].length;
