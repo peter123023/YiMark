@@ -2131,6 +2131,36 @@ button {
   border-bottom-left-radius: 6px;
 }
 
+/*
+ * 表格 widget（光标在块外时的渲染形态）。
+ * 视觉与预览表格同构但走界面配色：边框用描边色、表头淡墨底。
+ */
+.editor-side.live .cm-lp-table {
+  padding: 6px 0;
+}
+.editor-side.live .cm-lp-table table {
+  border-collapse: collapse;
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+.editor-side.live .cm-lp-table th,
+.editor-side.live .cm-lp-table td {
+  border: 1px solid var(--border);
+  padding: 4px 12px;
+  text-align: left;
+}
+.editor-side.live .cm-lp-table th {
+  background: rgba(var(--tint), 0.06);
+  color: var(--ink);
+  font-weight: 600;
+}
+.editor-side.live .cm-lp-table td {
+  color: var(--muted);
+}
+.editor-side.live .cm-lp-table tbody tr:nth-child(2n) {
+  background: rgba(var(--tint), 0.025);
+}
+
 /* 无标题提示条的灯泡：预览里是「💡 提示」标题行，编辑器对应标记位 */
 .editor-side.live .cm-lp-tip-icon {
   color: var(--accent);

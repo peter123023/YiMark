@@ -13,7 +13,7 @@
  * 文档始终是纯 Markdown：复制到公众号、导出、字数统计都走同一份文本，不会因为渲染而失真。
  */
 
-import { Range, StateEffect, StateField, type Extension, type Text } from '@codemirror/state';
+import { Range, StateEffect, StateField, type EditorState, type Extension, type Text } from '@codemirror/state';
 import {
   Decoration,
   type DecorationSet,
@@ -152,6 +152,138 @@ class TipIconWidget extends WidgetType {
     return true;
   }
 }
+
+/** GFM 表格：光标不在块内时整块渲染成真表格；点一下光标进块，切回源码行编辑 */
+class TableWidget extends WidgetType {
+  constructor(
+    private readonly src: string,
+    private readonly s: number,
+    private readonly e: number,
+  ) {
+    super();
+  }
+
+  eq(other: TableWidget): boolean {
+    // s/e 也要比：文档其他位置变了会让块平移，只比 src 会拿到过期的点击坐标
+    return other.src === this.src && other.s === this.s && other.e === this.e;
+  }
+
+  toDOM(): HTMLElement {
+    const el = document.createElement('div');
+    el.className = 'cm-lp-table';
+    el.dataset.blkS = String(this.s);
+    el.dataset.blkE = String(this.e);
+    const rows = this.src.split('\n').filter((_, i) => i !== 1); // 第二行是分隔行，不渲染
+    const cells = rows.map((r) =>
+      r
+        .replace(/^\s*\|/, '')
+        .replace(/\|\s*$/, '')
+        .split('|')
+        .map((c) => c.trim()),
+    );
+    const table = document.createElement('table');
+    const [head, ...body] = cells;
+    if (head) {
+      const tr = table.createTHead().insertRow();
+      for (const c of head) {
+        const th = document.createElement('th');
+        th.textContent = c;
+        tr.appendChild(th);
+      }
+    }
+    const tbody = table.createTBody();
+    for (const r of body) {
+      const tr = tbody.insertRow();
+      for (const c of r) {
+        const td = tr.insertCell();
+        td.textContent = c;
+      }
+    }
+    el.appendChild(table);
+    return el;
+  }
+
+  ignoreEvent(): boolean {
+    return true;
+  }
+}
+
+/* ---------------- 表格块装饰（StateField） ---------------- */
+
+/**
+ * GFM 表格块：连续的 | 行（≥2 行）且第二行是 --- 分隔行。
+ * 只认首尾都有竖线的写法 —— 省略首尾竖线的 GFM 变体太容易误伤普通含 | 的文本。
+ */
+function scanTables(doc: Text, inCode: Uint8Array) {
+  const isTableLine = (t: string) => /^\s*\|.*\|\s*$/.test(t);
+  const isSepRow = (t: string) => /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)+\|?\s*$/.test(t);
+  const blocks: { s: number; e: number }[] = [];
+  for (let n = 1; n <= doc.lines; n++) {
+    if (inCode[n]) continue;
+    if (!isTableLine(doc.line(n).text)) continue;
+    let e = n;
+    while (e + 1 <= doc.lines && !inCode[e + 1] && isTableLine(doc.line(e + 1).text)) e++;
+    if (e >= n + 1 && isSepRow(doc.line(n + 1).text)) {
+      blocks.push({ s: n, e });
+      n = e;
+    }
+  }
+  return blocks;
+}
+
+/**
+ * 表格块装饰必须住在 StateField 里 —— CM6 明令禁止 ViewPlugin 提供 block 装饰
+ * （RangeError: Block decorations may not be specified via plugins）。
+ * 光标在块内时不产 widget，显示源码行编辑；selection 变化即重算以切换显隐。
+ */
+const tableField = StateField.define<DecorationSet>({
+  create: (state) => buildTableDecos(state),
+  update(value, tr) {
+    return !tr.docChanged && !tr.selection ? value : buildTableDecos(tr.state);
+  },
+  provide: (f) => EditorView.decorations.compute([f], (state) => state.field(f)),
+});
+
+function buildTableDecos(state: EditorState): DecorationSet {
+  const doc = state.doc;
+  const inCode = new Uint8Array(doc.lines + 1);
+  let fence = false;
+  for (let n = 1; n <= doc.lines; n++) {
+    const isFence = /^\s*(```|~~~)/.test(doc.line(n).text);
+    inCode[n] = isFence ? 2 : fence ? 1 : 0;
+    if (isFence) fence = !fence;
+  }
+  const head = state.selection.main.head;
+  const decos: Range<Decoration>[] = [];
+  for (const { s, e } of scanTables(doc, inCode)) {
+    const from = doc.line(s).from;
+    const to = doc.line(e).to;
+    if (head >= from && head <= to) continue; // 光标在块内：显示源码行
+    decos.push(
+      Decoration.replace({ widget: new TableWidget(doc.sliceString(from, to), s, e), block: true, atomic: true }).range(
+        from,
+        to,
+      ),
+    );
+  }
+  return Decoration.set(decos, true);
+}
+
+/** 点击表格 widget → 光标进块（落到第一行数据行），widget 消失、源码行出现供编辑 */
+const tableClick = EditorView.domEventHandlers({
+  mousedown(event, view) {
+    const el = (event.target as HTMLElement).closest('.cm-lp-table') as HTMLElement | null;
+    if (!el) return false;
+    const s = Number(el.dataset.blkS);
+    const e = Number(el.dataset.blkE);
+    if (!Number.isFinite(s) || !Number.isFinite(e)) return false;
+    event.preventDefault();
+    const line = view.state.doc.line(Math.min(s + 2, e));
+    view.dispatch({ selection: { anchor: line.from } });
+    view.focus();
+    return true;
+  },
+});
 
 /* ---------------- 行内语法 ---------------- */
 
@@ -512,7 +644,8 @@ const livePlugin = ViewPlugin.fromClass(
       const imagesChanged = u.transactions.some((t) =>
         t.effects.some((e) => e.is(setLiveImages)),
       );
-      if (u.docChanged || u.viewportChanged || imagesChanged) {
+      // selectionSet 也要重建：表格 widget 的显隐取决于光标在不在块内
+      if (u.docChanged || u.viewportChanged || u.selectionSet || imagesChanged) {
         this.decorations = build(u.view);
       }
     }
@@ -539,5 +672,5 @@ const checkboxClick = EditorView.domEventHandlers({
 
 /** 直接编辑模式的全部扩展；用 Compartment 装载，才能在不重建编辑器开关 */
 export function livePreview(): Extension {
-  return [imagesField, livePlugin, checkboxClick, liveKeymap];
+  return [imagesField, tableField, tableClick, livePlugin, checkboxClick, liveKeymap];
 }
