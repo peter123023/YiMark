@@ -193,8 +193,8 @@ button {
   border-radius: 10px;
   box-shadow: var(--shadow-pop);
   z-index: 80;
-  animation: menu-in 0.14s var(--ease);
   transform-origin: top right;
+  animation: menu-in 0.14s var(--ease);
 }
 
 /* 分区小标题：比面板标题更轻，只做归类不抢注意力 */
