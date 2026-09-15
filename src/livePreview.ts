@@ -205,8 +205,10 @@ class TableWidget extends WidgetType {
     return el;
   }
 
+  // 必须 false：true 会让 CM 跳过整条事件处理链（含 tableClick 的 mousedown），
+  // 编辑器未聚焦时点表格就毫无反应
   ignoreEvent(): boolean {
-    return true;
+    return false;
   }
 }
 
