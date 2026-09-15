@@ -2161,30 +2161,16 @@ button {
   background: rgba(var(--tint), 0.025);
 }
 
-/*
- * 表格源码态（光标进块编辑时）：管道行整理成表格样子。
- * 只有横向 padding —— .cm-line 加纵向间距会让点击定位整体下偏（CodeMirror 红线）。
- */
-.editor-side.live .cm-lp-trow {
-  background: color-mix(in srgb, var(--accent) 3%, transparent);
-  border-left: 2px solid color-mix(in srgb, var(--accent) 30%, transparent);
-  border-right: 2px solid color-mix(in srgb, var(--accent) 30%, transparent);
-  padding-left: 8px;
+/* 单元格直接编辑：空格子也能点中，聚焦格用强调色描边 */
+.editor-side.live .cm-lp-table th,
+.editor-side.live .cm-lp-table td {
+  min-width: 56px;
+  cursor: text;
 }
-.editor-side.live .cm-lp-trow-first {
-  border-top-left-radius: 6px;
-  border-top-right-radius: 6px;
-}
-.editor-side.live .cm-lp-trow-last {
-  border-bottom-left-radius: 6px;
-  border-bottom-right-radius: 6px;
-}
-.editor-side.live .cm-lp-pipe {
-  color: var(--faint);
-  padding: 0 9px;
-}
-.editor-side.live .cm-lp-cell {
-  padding-right: 9px;
+.editor-side.live .cm-lp-table [contenteditable]:focus {
+  outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  outline-offset: -2px;
+  border-radius: 3px;
 }
 
 /* 无标题提示条的灯泡：预览里是「💡 提示」标题行，编辑器对应标记位 */

@@ -13,7 +13,7 @@
  * 文档始终是纯 Markdown：复制到公众号、导出、字数统计都走同一份文本，不会因为渲染而失真。
  */
 
-import { EditorState, Range, StateEffect, StateField, type Extension, type Text } from '@codemirror/state';
+import { Annotation, EditorState, Range, StateEffect, StateField, type Extension, type Text } from '@codemirror/state';
 import {
   Decoration,
   type DecorationSet,
@@ -27,6 +27,11 @@ import {
 /** 图片表（文件名 → data URI）；草稿切换、增删图片时派发这个 effect 刷新 */
 export const setLiveImages = StateEffect.define<Record<string, string>>();
 
+/** 标记「这个事务来自表格 widget 自己」：tableField 据此只映射位置、不重建 widget */
+const tableSync = Annotation.define<number>();
+/** 表格 widget 的自持监听派发事务时要用 view；本应用同一时刻只有一个编辑器实例 */
+let liveEditorView: EditorView | null = null;
+
 const imagesField = StateField.define<Record<string, string>>({
   create: () => ({}),
   update(value, tr) {
@@ -37,8 +42,6 @@ const imagesField = StateField.define<Record<string, string>>({
 
 /** 藏起一段标记（复用同一实例：Decoration 是不可变值，可以多处引用） */
 const HIDE = Decoration.replace({});
-/** 藏 + atomic：光标不允许落在被藏字符的外侧（表格首尾竖线用，防 End 键把内容写到表格语法外） */
-const HIDE_ATOMIC = Decoration.replace({ atomic: true });
 
 /* ---------------- 替换用的小部件 ---------------- */
 
@@ -155,26 +158,38 @@ class TipIconWidget extends WidgetType {
   }
 }
 
-/** GFM 表格：光标不在块内时整块渲染成真表格；点一下光标进块，切回源码行编辑 */
+/**
+ * GFM 表格：整块渲染成真表格，单元格直接可编辑（contentEditable）。
+ * 编辑产生的文本通过 tableSync 事务写回文档；tableField 对这类事务只映射
+ * 位置、复用同一 widget 实例（不换 DOM），光标和输入法组合状态才不会丢。
+ */
 class TableWidget extends WidgetType {
-  constructor(
-    private readonly src: string,
-    private readonly s: number,
-    private readonly e: number,
-  ) {
+  /** 可变字段：posFrom/posTo 由 tableField 在文档变化时更新；src 同步后更新 */
+  src: string;
+  s: number;
+  e: number;
+  posFrom = 0;
+  posTo = 0;
+  private el: HTMLElement | null = null;
+  /** 原始分隔行（含对齐冒号），序列化时原样保留 */
+  private readonly sepLine: string;
+
+  constructor(src: string, s: number, e: number) {
     super();
+    this.src = src;
+    this.s = s;
+    this.e = e;
+    this.sepLine = src.split('\n')[1] ?? '| --- |';
   }
 
   eq(other: TableWidget): boolean {
-    // s/e 也要比：文档其他位置变了会让块平移，只比 src 会拿到过期的点击坐标
     return other.src === this.src && other.s === this.s && other.e === this.e;
   }
 
   toDOM(): HTMLElement {
     const el = document.createElement('div');
     el.className = 'cm-lp-table';
-    el.dataset.blkS = String(this.s);
-    el.dataset.blkE = String(this.e);
+    this.el = el;
     const rows = this.src.split('\n').filter((_, i) => i !== 1); // 第二行是分隔行，不渲染
     const cells = rows.map((r) =>
       r
@@ -202,13 +217,90 @@ class TableWidget extends WidgetType {
       }
     }
     el.appendChild(table);
+    for (const cell of el.querySelectorAll<HTMLElement>('th, td')) {
+      this.makeEditable(cell);
+    }
+    el.addEventListener('input', () => this.sync());
+    el.addEventListener('keydown', (e) => this.onKeyDown(e));
+    el.addEventListener('paste', (e) => this.onPaste(e));
     return el;
   }
 
-  // 必须 false：true 会让 CM 跳过整条事件处理链（含 tableClick 的 mousedown），
-  // 编辑器未聚焦时点表格就毫无反应
+  /** 单元格可编辑：优先 plaintext-only（纯文本、无富文本残留），不支持则退回 true */
+  private makeEditable(cell: HTMLElement) {
+    try {
+      cell.contentEditable = 'plaintext-only';
+    } catch {
+      cell.contentEditable = 'true';
+    }
+    if (cell.contentEditable !== 'plaintext-only') cell.contentEditable = 'true';
+    cell.spellcheck = false;
+  }
+
+  private onKeyDown(e: KeyboardEvent) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      this.focusNextCell(1);
+    } else if (e.key === 'Tab') {
+      e.preventDefault();
+      this.focusNextCell(e.shiftKey ? -1 : 1);
+    } else if (e.key === '|') {
+      // 半角竖线会破坏列结构，替换成全角
+      e.preventDefault();
+      document.execCommand('insertText', false, '｜');
+    }
+  }
+
+  private onPaste(e: ClipboardEvent) {
+    e.preventDefault();
+    const text = e.clipboardData?.getData('text/plain') ?? '';
+    document.execCommand('insertText', false, text.replace(/[\r\n|]+/g, ' ').trim());
+  }
+
+  private focusNextCell(dir: 1 | -1) {
+    const cells = [...(this.el?.querySelectorAll<HTMLElement>('th, td') ?? [])];
+    const i = cells.indexOf(document.activeElement as HTMLElement);
+    const next = cells[i + dir];
+    if (!next) {
+      (document.activeElement as HTMLElement | null)?.blur();
+      return;
+    }
+    next.focus();
+    const range = document.createRange();
+    range.selectNodeContents(next);
+    range.collapse(false);
+    window.getSelection()?.removeAllRanges();
+    window.getSelection()?.addRange(range);
+  }
+
+  /** 读当前 DOM 单元格 → 还原成表格 Markdown → 写回文档 */
+  private sync() {
+    const view = liveEditorView;
+    if (!view || !this.el || this.posTo <= this.posFrom) return;
+    if (!view || !this.el || this.posTo <= this.posFrom) return;
+    const table = this.el.querySelector('table');
+    if (!table) return;
+    const clean = (s: string | null) =>
+      (s ?? '').replace(/\|/g, '｜').replace(/[\r\n]+/g, ' ').trim();
+    const rowEls = [...table.querySelectorAll('tr')];
+    if (!rowEls.length) return;
+    const lines = [
+      `| ${[...(rowEls[0].children ?? [])].map((c) => clean(c.textContent)).join(' | ')} |`,
+      this.sepLine,
+      ...rowEls.slice(1).map((tr) => `| ${[...tr.children].map((c) => clean(c.textContent)).join(' | ')} |`),
+    ];
+    const md = lines.join('\n');
+    if (md === this.src) return;
+    this.src = md;
+    view.dispatch({
+      changes: { from: this.posFrom, to: this.posTo, insert: md },
+      annotations: tableSync.of(1),
+    });
+  }
+
+  // true：CM 不插手 widget 内部的点击/输入，单元格的 contentEditable 全权接管
   ignoreEvent(): boolean {
-    return false;
+    return true;
   }
 }
 
@@ -238,17 +330,32 @@ function scanTables(doc: Text, inCode: Uint8Array) {
 /**
  * 表格块装饰必须住在 StateField 里 —— CM6 明令禁止 ViewPlugin 提供 block 装饰
  * （RangeError: Block decorations may not be specified via plugins）。
- * 光标在块内时不产 widget，显示源码行编辑；selection 变化即重算以切换显隐。
+ * 光标在块内时不产 widget（源码态，仅在方向键硬闯时出现）；
+ * widget 自己的同步事务只映射位置、复用 widget 实例，编辑中的光标才不会丢。
  */
 const tableField = StateField.define<DecorationSet>({
   create: (state) => buildTableDecos(state),
   update(value, tr) {
-    return !tr.docChanged && !tr.selection ? value : buildTableDecos(tr.state);
+    if (tr.annotation(tableSync) !== undefined) {
+      const mapped = value.map(tr.changes);
+      // 把映射后的块位置写回 widget（它的自持监听派发下一次同步时要用）
+      const it = mapped.iter();
+      while (it.value) {
+        const w = (it.value.spec as { widget?: TableWidget }).widget;
+        if (w instanceof TableWidget) {
+          w.posFrom = it.from;
+          w.posTo = it.to;
+        }
+        it.next();
+      }
+      return mapped;
+    }
+    return !tr.docChanged && !tr.selection ? value : buildTableDecos(tr.state, value);
   },
   provide: (f) => EditorView.decorations.compute([f], (state) => state.field(f)),
 });
 
-function buildTableDecos(state: EditorState): DecorationSet {
+function buildTableDecos(state: EditorState, previous?: DecorationSet): DecorationSet {
   const doc = state.doc;
   const inCode = new Uint8Array(doc.lines + 1);
   let fence = false;
@@ -258,36 +365,32 @@ function buildTableDecos(state: EditorState): DecorationSet {
     if (isFence) fence = !fence;
   }
   const head = state.selection.main.head;
+  // 旧 widget 按「块起点」登记：内容没变就复用同一实例，DOM（编辑中的光标）不重建
+  const reused = new Map<number, TableWidget>();
+  if (previous) {
+    const it = previous.iter();
+    while (it.value) {
+      const w = (it.value.spec as { widget?: TableWidget }).widget;
+      if (w instanceof TableWidget) reused.set(w.posFrom, w);
+      it.next();
+    }
+  }
   const decos: Range<Decoration>[] = [];
   for (const { s, e } of scanTables(doc, inCode)) {
     const from = doc.line(s).from;
     const to = doc.line(e).to;
     if (head >= from && head <= to) continue; // 光标在块内：显示源码行
-    decos.push(
-      Decoration.replace({ widget: new TableWidget(doc.sliceString(from, to), s, e), block: true, atomic: true }).range(
-        from,
-        to,
-      ),
-    );
+    const src = doc.sliceString(from, to);
+    const old = reused.get(from);
+    const w = old && old.src === src ? old : new TableWidget(src, s, e);
+    w.posFrom = from;
+    w.posTo = to;
+    w.s = s;
+    w.e = e;
+    decos.push(Decoration.replace({ widget: w, block: true, atomic: true }).range(from, to));
   }
   return Decoration.set(decos, true);
 }
-
-/** 点击表格 widget → 光标进块（落到第一行数据行），widget 消失、源码行出现供编辑 */
-const tableClick = EditorView.domEventHandlers({
-  mousedown(event, view) {
-    const el = (event.target as HTMLElement).closest('.cm-lp-table') as HTMLElement | null;
-    if (!el) return false;
-    const s = Number(el.dataset.blkS);
-    const e = Number(el.dataset.blkE);
-    if (!Number.isFinite(s) || !Number.isFinite(e)) return false;
-    event.preventDefault();
-    const line = view.state.doc.line(Math.min(s + 2, e));
-    view.dispatch({ selection: { anchor: line.from } });
-    view.focus();
-    return true;
-  },
-});
 
 /* ---------------- 行内语法 ---------------- */
 
@@ -425,43 +528,6 @@ const liveKeymap = keymap.of([
   { key: 'Backspace', run: eatBlockMark },
 ]);
 
-/**
- * 表格行守卫：表格的首尾竖线是隐藏的语法字符，光标落在行尾（末尾竖线之后）
- * 打字会把内容写到表格语法外，整行当场掉出表格。
- * 这里把这种「纯插入」改写到末尾竖线之前；分隔行是结构行，直接禁止改动。
- */
-const tableGuard = EditorState.transactionFilter.of((tr) => {
-  if (!tr.docChanged) return tr;
-  const start = tr.startState;
-  const doc = start.doc;
-  const sel = start.selection.main;
-  if (!sel.empty) return tr;
-  const line = doc.lineAt(sel.head);
-  const inCode = new Uint8Array(doc.lines + 1);
-  let fence = false;
-  for (let n = 1; n <= doc.lines; n++) {
-    const isF = /^\s*(```|~~~)/.test(doc.line(n).text);
-    inCode[n] = isF ? 2 : fence ? 1 : 0;
-    if (isF) fence = !fence;
-  }
-  const blk = scanTables(doc, inCode).find((b) => line.number >= b.s && line.number <= b.e);
-  if (!blk) return tr;
-  if (line.number === blk.s + 1) return []; // 分隔行：只许看不许改
-  const pipePos = line.from + line.text.lastIndexOf('|');
-  if (sel.head <= pipePos) return tr;
-  // 只改写「单一纯插入」；替换/删除/多光标放行（后者由用户自己承担）
-  let ok = true;
-  let text = '';
-  let count = 0;
-  tr.changes.iterChanges((fromA, toA, _fb, _tb, inserted) => {
-    count++;
-    if (count === 1 && fromA === toA) text = inserted.toString();
-    else ok = false;
-  });
-  if (!ok || count !== 1) return tr;
-  return { changes: { from: pipePos, insert: text }, selection: { anchor: pipePos + text.length } };
-});
-
 /* ---------------- 装饰构建 ---------------- */
 
 function build(view: EditorView): DecorationSet {
@@ -520,13 +586,6 @@ function build(view: EditorView): DecorationSet {
     }
   }
 
-  /** 表格块：光标在块内时按「表格样子的可编辑行」装饰（widget 态由 tableField 负责） */
-  const tblByLine = new Map<number, { s: number; e: number }>();
-  for (const b of scanTables(doc, inCode)) {
-    for (let k = b.s; k <= b.e; k++) tblByLine.set(k, b);
-  }
-  const head = state.selection.main.head;
-
   for (let n = 1; n <= doc.lines; n++) {
     const line = doc.line(n);
     const text = line.text;
@@ -535,45 +594,6 @@ function build(view: EditorView): DecorationSet {
         const cls = inCode[n] === 2 ? 'cm-lp-codeblock cm-lp-fence' : 'cm-lp-codeblock';
         decos.push(Decoration.line({ class: cls }).range(line.from));
         continue; // 代码块里不做任何替换，原样编辑
-      }
-
-      // 表格块：widget 态（光标在外）不加行内装饰，整块留给 tableField 的块替换；
-      // 源码态（光标进块编辑）把管道行整理成「表格样子的可编辑行」——
-      // 藏首尾竖线、内竖线变淡分隔、单元格加内边距、--- 分隔行整行隐藏
-      const tbl = tblByLine.get(n);
-      if (tbl) {
-        const bFrom = doc.line(tbl.s).from;
-        const bTo = doc.line(tbl.e).to;
-        if (head < bFrom || head > bTo) continue; // widget 态
-        if (n === tbl.s + 1) {
-          decos.push(HIDE_ATOMIC.range(line.from, line.to)); // 分隔行：整行隐掉，留一个空行当行距
-          continue;
-        }
-        const rowCls = ['cm-lp-trow'];
-        if (n === tbl.s) rowCls.push('cm-lp-trow-first');
-        if (n === tbl.e) rowCls.push('cm-lp-trow-last');
-        decos.push(Decoration.line({ class: rowCls.join(' ') }).range(line.from));
-        const text = line.text;
-        const pipeIdx: number[] = [];
-        for (let i = 0; i < text.length; i++) if (text[i] === '|') pipeIdx.push(i);
-        if (pipeIdx.length >= 2) {
-          const first = pipeIdx[0];
-          const last = pipeIdx[pipeIdx.length - 1];
-          for (const idx of pipeIdx) {
-            const at = line.from + idx;
-            if (idx === first || idx === last) {
-              decos.push(HIDE_ATOMIC.range(at, at + 1)); // 首尾竖线：藏，且光标进不来（End/Home 不会落到表格语法外）
-            } else {
-              decos.push(Decoration.mark({ class: 'cm-lp-pipe' }).range(at, at + 1)); // 内竖线：淡分隔
-            }
-          }
-          for (let i = 0; i < pipeIdx.length - 1; i++) {
-            const cs = line.from + pipeIdx[i] + 1;
-            const ce = line.from + (i + 1 < pipeIdx.length - 1 ? pipeIdx[i + 1] : last);
-            if (ce > cs) decos.push(Decoration.mark({ class: 'cm-lp-cell' }).range(cs, ce));
-          }
-        }
-        continue;
       }
 
       // 分割线：整行替换成一条线
@@ -724,6 +744,7 @@ const livePlugin = ViewPlugin.fromClass(
     decorations: DecorationSet;
 
     constructor(view: EditorView) {
+      liveEditorView = view; // 表格 widget 的自持监听派发事务时要用
       this.decorations = build(view);
     }
 
@@ -759,5 +780,5 @@ const checkboxClick = EditorView.domEventHandlers({
 
 /** 直接编辑模式的全部扩展；用 Compartment 装载，才能在不重建编辑器开关 */
 export function livePreview(): Extension {
-  return [imagesField, tableField, tableClick, tableGuard, livePlugin, checkboxClick, liveKeymap];
+  return [imagesField, tableField, livePlugin, checkboxClick, liveKeymap];
 }
