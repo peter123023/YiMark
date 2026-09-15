@@ -29,6 +29,8 @@ const STORAGE_ACTIVE_DRAFT = 'yimark:active-draft';
 const STORAGE_ACCENT = 'yimark:accent';
 /** 工作区模式（edit/split/preview），刷新后要停在用户上次用的那档 */
 const STORAGE_VIEW_MODE = 'yimark:view-mode';
+/** 分栏位置（编辑器侧宽度百分比），拖完刷新要保留 */
+const STORAGE_SPLIT = 'yimark:split';
 /** 旧版图片注册表存放位置（localStorage），仅用于一次性迁移 */
 const STORAGE_IMAGES = 'yimark:imgs';
 /** 改名前的 key 前缀（Mars Editor / wechat-mp-editor 时代），迁移完即弃 */
@@ -162,11 +164,23 @@ export default function App() {
       // 存不进去不影响本次会话使用
     }
   };
-  /** 编辑器侧宽度（百分比，默认预览最小宽度） */
+  /** 编辑器侧宽度（百分比，默认预览最小宽度）；上次拖的位置从 localStorage 恢复 */
   const [editorPct, setEditorPct] = useState<number>(() => {
-    const w = window.innerWidth;
-    return Math.round(((w - MIN_PREVIEW_PX) / w) * 1000) / 10;
+    const saved = Number(localStorage.getItem(STORAGE_SPLIT));
+    return Number.isFinite(saved) && saved > 0 && saved < 100 ? saved : (() => {
+      const w = window.innerWidth;
+      return Math.round(((w - MIN_PREVIEW_PX) / w) * 1000) / 10;
+    })();
   });
+  /** 写 state 的同时落盘 —— 拖拽结束 / 双击复位共用 */
+  const applyEditorPct = (v: number) => {
+    setEditorPct(v);
+    try {
+      localStorage.setItem(STORAGE_SPLIT, String(v));
+    } catch {
+      // 存不进去不影响本次会话使用
+    }
+  };
   /** 拖拽中禁用宽度过渡 */
   const draggingRef = useRef(false);
   const splitRef = useRef<HTMLDivElement>(null);
@@ -526,8 +540,8 @@ export default function App() {
     const split = splitRef.current;
     if (editor && split) {
       const rect = split.getBoundingClientRect();
-      // 把最终宽度写回 state（供预览模式切换 / 复位引用）
-      setEditorPct(Math.max(0, Math.min(100, (editor.getBoundingClientRect().width / rect.width) * 100)));
+      // 把最终宽度写回 state 并落盘（供预览模式切换 / 复位引用）
+      applyEditorPct(Math.max(0, Math.min(100, (editor.getBoundingClientRect().width / rect.width) * 100)));
     }
   };
 
@@ -558,7 +572,7 @@ export default function App() {
     editor.style.width = `${pct}%`;
     void editor.offsetHeight;
     setDraggingUi(false);
-    setEditorPct(pct);
+    applyEditorPct(pct);
   };
 
   /**
