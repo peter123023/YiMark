@@ -883,6 +883,22 @@ button {
   margin: 0 5px;
 }
 
+/* 编辑锁：开锁时弱化，锁定时强调色高亮提示「当前不可编辑」；锁定态其余按钮变灰 */
+.md-toolbar-btn.lock-btn {
+  color: var(--faint);
+}
+.md-toolbar-btn.lock-btn.locked {
+  color: var(--accent);
+}
+.md-toolbar-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.md-toolbar-btn:disabled:hover {
+  background: transparent;
+  color: var(--muted);
+}
+
 @keyframes menu-in {
   from {
     opacity: 0;

@@ -1,13 +1,14 @@
 import { forwardRef, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowCounterClockwise, Code, CodeBlock, Link, ListBullets, ListChecks, ListDashes, Minus, Quotes, Table, TextB, TextH, TextHFour, TextHOne, TextHThree, TextHTwo, TextItalic } from '@phosphor-icons/react';
+import { ArrowCounterClockwise, Code, CodeBlock, Link, ListBullets, ListChecks, ListDashes, LockSimple, LockSimpleOpen, Minus, Quotes, Table, TextB, TextH, TextHFour, TextHOne, TextHThree, TextHTwo, TextItalic } from '@phosphor-icons/react';
 import { EditorView, keymap, lineNumbers } from '@codemirror/view';
-import { EditorState } from '@codemirror/state';
+import { Compartment, EditorState } from '@codemirror/state';
 import { defaultKeymap, history, historyKeymap, indentWithTab, undo } from '@codemirror/commands';
 import { searchKeymap } from '@codemirror/search';
 import { autocompletion } from '@codemirror/autocomplete';
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
 import { languages } from '@codemirror/language-data';
 import { registerImageFiles } from '../images';
+import { livePreview, setLiveImages } from '../livePreview';
 import type { ScrollSyncChannel } from '../scrollSync';
 
 /* Phosphor 图标统一尺寸；H1–H4 菜单项各用对应字号图标 */
@@ -27,6 +28,13 @@ interface Props {
   sync: ScrollSyncChannel;
   /** 预览模式：面板收起 */
   collapsed: boolean;
+  /**
+   * 直接编辑模式：把 Markdown 标记渲染掉但保留可编辑（见 livePreview.ts）。
+   * 关掉就是纯源码模式。
+   */
+  live: boolean;
+  /** 本地图片 data URI（直接编辑模式下把 ![[name]] 画成真图） */
+  images: Record<string, string>;
   /** 编辑器侧宽度（百分比） */
   widthPct: number;
   /**
@@ -37,11 +45,19 @@ interface Props {
 }
 
 const EditorPane = forwardRef<HTMLElement, Props>(function EditorPane(
-  { value, onChange, onAddImage, imageNames, draftId, sync, collapsed, widthPct, jumpRequest },
+  { value, onChange, onAddImage, imageNames, draftId, sync, collapsed, live, images, widthPct, jumpRequest },
   ref,
 ) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
+  /** 直接编辑模式是热开关：装在 Compartment 里，不用重建编辑器 */
+  const liveComp = useRef(new Compartment()).current;
+  /** 锁定编辑也是热开关（readOnly + editable 双保险，挡键盘输入也挡拖选改写） */
+  const readonlyComp = useRef(new Compartment()).current;
+  /** 锁定状态：默认开锁；ref 供 keymap 等挂载期闭包读取，避免拿到过期值 */
+  const [locked, setLocked] = useState(false);
+  const lockedRef = useRef(false);
+  lockedRef.current = locked;
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
   const syncRef = useRef(sync);
@@ -63,6 +79,7 @@ const EditorPane = forwardRef<HTMLElement, Props>(function EditorPane(
   /** 注册图片，并在当前光标处插入 Obsidian 嵌入 ![[name]] */
   const insertImages = async (files: File[]) => {
     const view = viewRef.current;
+    if (!view || lockedRef.current) return;
     const { names } = await registerImageFiles(files, onAddImage);
     if (!names.length || !view) return;
     const block = names.map((n) => `![[${n}]]\n`).join('');
@@ -93,14 +110,14 @@ const EditorPane = forwardRef<HTMLElement, Props>(function EditorPane(
             {
               key: 'Mod-b',
               run: () => {
-                wrapSelection('**', '**');
+                toggleWrap('**', '**');
                 return true;
               },
             },
             {
               key: 'Mod-i',
               run: () => {
-                wrapSelection('*', '*');
+                toggleWrap('*', '*');
                 return true;
               },
             },
@@ -110,6 +127,8 @@ const EditorPane = forwardRef<HTMLElement, Props>(function EditorPane(
             base: markdownLanguage,
             codeLanguages: languages,
           }),
+          liveComp.of(live ? livePreview() : []),
+          readonlyComp.of([]),
           // ![[ 图片名自动补全
           autocompletion({
             override: [
@@ -134,14 +153,17 @@ const EditorPane = forwardRef<HTMLElement, Props>(function EditorPane(
               lineHeight: '1.75',
               overflow: 'auto',
             },
+            /* 走 CSS 变量而不是写死色值：切界面配色（含深色模式）时编辑器要跟着变，
+               而 CodeMirror 的 theme 只在挂载时生成一次 */
             '.cm-content': {
               padding: '20px 22px 20px 24px',
-              caretColor: '#d97757',
+              color: 'var(--ink)',
+              caretColor: 'var(--accent)',
             },
             '.cm-line': { padding: '0' },
             '.cm-gutters': {
               background: 'transparent',
-              color: '#b0ab9f',
+              color: 'var(--faint)',
               fontSize: '13.5px',
               paddingLeft: '12px',
               paddingRight: '14px',
@@ -149,7 +171,7 @@ const EditorPane = forwardRef<HTMLElement, Props>(function EditorPane(
             },
             '.cm-activeLineGutter': { background: 'transparent' },
             '.cm-selectionBackground, &.cm-focused .cm-selectionBackground': {
-              background: 'rgba(217,119,87,0.2)',
+              background: 'rgba(var(--tint), 0.18)',
             },
             '&.cm-focused': { outline: 'none' },
             '.cm-activeLine': { background: 'transparent' },
@@ -200,6 +222,31 @@ const EditorPane = forwardRef<HTMLElement, Props>(function EditorPane(
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // 直接编辑模式热开关：只换这个 Compartment 的内容，编辑器实例与光标都不动
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    view.dispatch({ effects: liveComp.reconfigure(live ? livePreview() : []) });
+  }, [live, liveComp]);
+
+  // 锁定热开关：readOnly 挡输入类事务，editable=false 连光标都不给
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    view.dispatch({
+      effects: readonlyComp.reconfigure(
+        locked ? [EditorState.readOnly.of(true), EditorView.editable.of(false)] : [],
+      ),
+    });
+  }, [locked, readonlyComp]);
+
+  // 图片表变了要重画 ![[name]]：装饰缓存在插件里，靠 effect 触发重算
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    view.dispatch({ effects: setLiveImages.of(images) });
+  }, [images]);
 
   // 内容同步：草稿切换（draftId 变化）或外部 value 变化（导入/清理）时，
   // 若 doc 与 value 不同则全量替换并尽量保持光标。
@@ -282,19 +329,95 @@ const EditorPane = forwardRef<HTMLElement, Props>(function EditorPane(
 
   /* ---------------- Markdown 格式工具栏 ---------------- */
 
-  /** 取编辑器 view，未挂载时返回 null */
+  /** 取编辑器 view，未挂载或锁定时返回 null（全部格式按钮的统一守卫） */
   const withView = <T,>(fn: (view: EditorView) => T): T | null => {
+    if (lockedRef.current) return null;
     const view = viewRef.current;
     return view ? fn(view) : null;
   };
 
   /** 包裹选区（加粗/斜体/行内码）；无选区时插入成对标记并置光标于中间 */
-  const wrapSelection = (before: string, after: string) =>
+  /** 正则元字符转义（标记里有 * 和 ` 这类） */
+  const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+  /**
+   * 加 / 去标记。
+   *
+   * 所见即所得下用户看不到 `**`，所以「再点一次 B 取消加粗」有三种可能：
+   * 选区连标记一起选中了、标记在选区外侧（渲染后最常见）、光标就落在加粗词中间。
+   * 三种都要能去掉，否则格式一旦加上就只能在源码模式里删。
+   */
+  const toggleWrap = (before: string, after: string) =>
     withView((view) => {
       const { from, to } = view.state.selection.main;
-      const text = view.state.doc.sliceString(from, to);
-      const sel = text ? { anchor: from + before.length, head: to + before.length } : { anchor: from + before.length };
-      view.dispatch({ changes: [{ from, to, insert: before + text + after }], selection: sel });
+      const doc = view.state.doc;
+
+      // ① 选区自身带着标记
+      if (to > from) {
+        const text = doc.sliceString(from, to);
+        if (
+          text.length >= before.length + after.length &&
+          text.startsWith(before) &&
+          text.endsWith(after)
+        ) {
+          const inner = text.slice(before.length, text.length - after.length);
+          view.dispatch({
+            changes: { from, to, insert: inner },
+            selection: { anchor: from, head: from + inner.length },
+          });
+          view.focus();
+          return;
+        }
+      }
+
+      // ② 标记在选区外侧
+      const outFrom = from - before.length;
+      const outTo = to + after.length;
+      if (
+        outFrom >= 0 &&
+        outTo <= doc.length &&
+        doc.sliceString(outFrom, from) === before &&
+        doc.sliceString(to, outTo) === after
+      ) {
+        view.dispatch({
+          changes: [
+            { from: outFrom, to: from, insert: '' },
+            { from: to, to: outTo, insert: '' },
+          ],
+          selection: { anchor: outFrom, head: to - before.length },
+        });
+        view.focus();
+        return;
+      }
+
+      // ③ 光标在某个带标记的词内部
+      if (from === to) {
+        const line = doc.lineAt(from);
+        const re = new RegExp(`${escapeRe(before)}([^\\n]+?)${escapeRe(after)}`, 'g');
+        for (const m of line.text.matchAll(re)) {
+          const s = line.from + (m.index ?? 0);
+          const e = s + m[0].length;
+          if (from > s && from < e) {
+            view.dispatch({
+              changes: [
+                { from: s, to: s + before.length, insert: '' },
+                { from: e - after.length, to: e, insert: '' },
+              ],
+              selection: { anchor: from - before.length, head: to - before.length },
+            });
+            view.focus();
+            return;
+          }
+        }
+      }
+
+      // 都没有 → 正常包裹
+      const text = from === to ? '' : doc.sliceString(from, to);
+      const anchor = from + before.length;
+      view.dispatch({
+        changes: { from, to, insert: before + text + after },
+        selection: text ? { anchor, head: to + before.length } : { anchor },
+      });
       view.focus();
     });
 
@@ -379,15 +502,15 @@ const EditorPane = forwardRef<HTMLElement, Props>(function EditorPane(
   ];
 
   const toolbarBtns: { key: string; title: string; icon: React.ReactNode; onClick: () => void }[] = [
-    { key: 'bold', title: '加粗', icon: <TextB size={ICON} />, onClick: () => wrapSelection('**', '**') },
-    { key: 'italic', title: '斜体', icon: <TextItalic size={ICON} />, onClick: () => wrapSelection('*', '*') },
-    { key: 'code', title: '行内代码', icon: <Code size={ICON} />, onClick: () => wrapSelection('`', '`') },
+    { key: 'bold', title: '加粗', icon: <TextB size={ICON} />, onClick: () => toggleWrap('**', '**') },
+    { key: 'italic', title: '斜体', icon: <TextItalic size={ICON} />, onClick: () => toggleWrap('*', '*') },
+    { key: 'code', title: '行内代码', icon: <Code size={ICON} />, onClick: () => toggleWrap('`', '`') },
     { key: 'quote', title: '引用', icon: <Quotes size={ICON} />, onClick: () => prefixLine('> ') },
     { key: 'list', title: '无序列表', icon: <ListBullets size={ICON} />, onClick: () => prefixLine('- ') },
     { key: 'task', title: '待办事项', icon: <ListChecks size={ICON} />, onClick: () => prefixLine('- [ ] ') },
     { key: 'fence', title: '代码块', icon: <CodeBlock size={ICON} />, onClick: () => insertBlock('\n```ts\n\n```\n') },
     { key: 'table', title: '表格', icon: <Table size={ICON} />, onClick: insertTable },
-    { key: 'link', title: '链接', icon: <Link size={ICON} />, onClick: () => wrapSelection('[', '](https://)') },
+    { key: 'link', title: '链接', icon: <Link size={ICON} />, onClick: () => toggleWrap('[', '](https://)') },
     { key: 'hr', title: '分割线', icon: <Minus size={ICON} />, onClick: () => insertBlock('\n---\n') },
     { key: 'undo', title: '撤销', icon: <ArrowCounterClockwise size={ICON} />, onClick: undoEdit },
   ];
@@ -395,12 +518,12 @@ const EditorPane = forwardRef<HTMLElement, Props>(function EditorPane(
   return (
     <section
       ref={ref}
-      className={`split-pane editor-side ${collapsed ? 'collapsed' : ''}`}
+      className={`split-pane editor-side ${collapsed ? 'collapsed' : ''} ${live ? 'live' : ''}`}
       style={{ width: `${widthPct}%` }}
     >
       <div className="pane-head">
         <span className="pane-title">
-          源码
+          {live ? '编辑' : '源码'}
         </span>
         <div className="pane-head-right">
           <button
@@ -441,6 +564,17 @@ const EditorPane = forwardRef<HTMLElement, Props>(function EditorPane(
       )}
       {/* Markdown 格式工具栏 */}
       <div className="md-toolbar" role="toolbar" aria-label="Markdown 格式">
+        {/* 编辑锁：锁住后编辑器 readOnly、格式按钮全部失效 */}
+        <button
+          className={`md-toolbar-btn lock-btn ${locked ? 'locked' : ''}`}
+          title={locked ? '已锁定 · 点击解锁编辑' : '锁定编辑，防止误改'}
+          aria-label={locked ? '解锁编辑器' : '锁定编辑器'}
+          aria-pressed={locked}
+          onClick={() => setLocked((v) => !v)}
+        >
+          {locked ? <LockSimple size={ICON} weight="bold" /> : <LockSimpleOpen size={ICON} weight="bold" />}
+        </button>
+        <span className="md-toolbar-divider" />
         {/* 标题层级下拉 */}
         <div className="md-toolbar-dropdown" ref={headingWrapRef}>
           <button
@@ -449,6 +583,7 @@ const EditorPane = forwardRef<HTMLElement, Props>(function EditorPane(
             aria-label="标题"
             aria-expanded={headingOpen}
             aria-haspopup="menu"
+            disabled={locked}
             onClick={(e) => {
               e.stopPropagation();
               setHeadingOpen((v) => !v);
@@ -478,7 +613,7 @@ const EditorPane = forwardRef<HTMLElement, Props>(function EditorPane(
           )}
         </div>
         {toolbarBtns.map((b) => (
-          <button key={b.key} className="md-toolbar-btn" title={b.title} aria-label={b.title} onClick={b.onClick}>
+          <button key={b.key} className="md-toolbar-btn" title={b.title} aria-label={b.title} disabled={locked} onClick={b.onClick}>
             {b.icon}
           </button>
         )).reduce<React.ReactNode[]>((acc, btn, i) => {
