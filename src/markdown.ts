@@ -77,6 +77,15 @@ const md = new MarkdownIt({
 md.use(markdownItFootnote);
 md.use(markdownItMark);
 
+/**
+ * markdown-it 默认只放行位图类 data URI（防 XSS 白名单，见 validateLink）。
+ * <img> 标签里的 svg 不会执行脚本，本地编辑器内容自足可信，放行 svg
+ * 让预览与编辑态对 `![](data:image/svg+xml,…)` 的表现一致。
+ */
+const defaultValidateLink = md.validateLink;
+md.validateLink = (src: string) =>
+  /^data:image\/svg\+xml[;,]/i.test(src.trim()) || defaultValidateLink(src);
+
 /* Obsidian 图片嵌入：![[文件名]] → 本地注册表里的图片；未注册时渲染占位提示 */
 md.inline.ruler.before('image', 'obsidian_embed', (state: any, silent: boolean) => {
   const start = state.pos;
@@ -424,6 +433,71 @@ function highlightCached(code: string, lang: string): string | null {
   hlCache.set(key, out);
   if (hlCache.size > HL_CACHE_MAX) hlCache.delete(hlCache.keys().next().value as string);
   return out;
+}
+
+/**
+ * 把 hljs 输出里的 HTML 实体解码回原字符。
+ * 解码后文本必须与源码逐字符对齐，编辑态代码块才能按偏移映射回文档位置。
+ */
+function decodeHtmlEntities(s: string): string {
+  return s
+    .replace(/&#x([0-9a-f]+);/gi, (_m, h: string) => String.fromCodePoint(parseInt(h, 16)))
+    .replace(/&#(\d+);/g, (_m, d: string) => String.fromCodePoint(Number(d)))
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, '&');
+}
+
+/** 一段着色区间：from/to 是相对代码源串的偏移（解码后口径，与源码逐字符对齐） */
+export interface SyntaxSpan {
+  from: number;
+  to: number;
+  /** hljs token 类名（多类取第一个，如 hljs-keyword） */
+  cls: string;
+}
+
+/**
+ * 把一段代码按 hljs tokenize 结果拆成着色区间（编辑态代码块高亮用）。
+ * 复用 highlightCached 的 LRU 缓存 —— 编辑时每次按键都会重算，不能反复 tokenize。
+ * 未标注语言 / 高亮器未就绪 / tokenize 失败返回 null，调用方按无高亮处理。
+ */
+export function highlightSpans(code: string, lang: string): SyntaxSpan[] | null {
+  if (!lang || !hljs) return null;
+  const html = highlightCached(code, lang);
+  if (html == null) return null;
+  const spans: SyntaxSpan[] = [];
+  /** 开着的 span 类名栈；hljs 会嵌套（hljs-string 里包 hljs-subst），最内层为准 */
+  const stack: string[] = [];
+  let i = 0;
+  let off = 0;
+  while (i < html.length) {
+    if (html[i] === '<') {
+      const end = html.indexOf('>', i);
+      if (end < 0) break;
+      const tag = html.slice(i, end + 1);
+      if (tag.startsWith('</')) stack.pop();
+      else stack.push(/^<span class="([^"]*)"/.exec(tag)?.[1] ?? '');
+      i = end + 1;
+      continue;
+    }
+    let j = i;
+    while (j < html.length && html[j] !== '<') j++;
+    const text = decodeHtmlEntities(html.slice(i, j));
+    if (text) {
+      for (let k = stack.length - 1; k >= 0; k--) {
+        const cls = stack[k].split(/\s+/)[0];
+        if (cls) {
+          spans.push({ from: off, to: off + text.length, cls });
+          break;
+        }
+      }
+      off += text.length;
+    }
+    i = j;
+  }
+  return spans;
 }
 
 const renderCode: RenderRule = (tokens, idx, _o, env) => {

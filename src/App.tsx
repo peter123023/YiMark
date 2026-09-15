@@ -306,6 +306,8 @@ export default function App() {
       '--danger': m.danger,
     };
     for (const [k, v] of Object.entries(vars)) root.style.setProperty(k, v);
+    // 亮暗模式标记：CSS 选不中内联变量，靠这个属性切代码高亮等深色分支
+    root.dataset.accentMode = a.mode;
     // 让原生滚动条、表单控件也跟着深浅走
     root.style.colorScheme = a.mode;
     document.querySelector('meta[name="theme-color"]')?.setAttribute('content', a.accent);

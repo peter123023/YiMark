@@ -2211,6 +2211,31 @@ button {
   border-color: var(--accent);
 }
 
+/* 代码语法高亮色板（编辑态代码块）：浅色用 Atom One Light 基调压灰，
+   深色走 One Dark。色值不进 accents.ts —— 这是代码着色的领域惯例，不是界面主题 */
+:root {
+  --syntax-comment: #99958a;
+  --syntax-keyword: #9d3fa2;
+  --syntax-string: #4e944e;
+  --syntax-number: #a06b00;
+  --syntax-title: #3d6ed1;
+  --syntax-type: #b26b00;
+  --syntax-attr: #c25449;
+  --syntax-tag: #c25449;
+  --syntax-meta: #2c8f9b;
+}
+html[data-accent-mode='dark'] {
+  --syntax-comment: #7d8590;
+  --syntax-keyword: #c678dd;
+  --syntax-string: #98c379;
+  --syntax-number: #d19a66;
+  --syntax-title: #61afef;
+  --syntax-type: #e5c07b;
+  --syntax-attr: #e06c75;
+  --syntax-tag: #e06c75;
+  --syntax-meta: #56b6c2;
+}
+
 .editor-side.live .cm-lp-codeblock {
   background: rgba(var(--tint), 0.045);
   font-family: var(--mono);
@@ -2219,9 +2244,82 @@ button {
   padding-right: 16px;
 }
 
-/* 围栏那三行反引号本身不需要被读，弱化成代码块的上下框 */
-.editor-side.live .cm-lp-fence {
-  color: var(--faint);
+/* 开围栏行：整行被语言标签 widget 顶掉（font-size 压 0），自己只当卡片圆角顶边 */
+.editor-side.live .cm-lp-fence-open {
+  font-size: 0;
+  line-height: 0;
+  padding-top: 6px;
+  padding-bottom: 2px;
+  border-radius: 8px 8px 0 0;
+}
+
+/* 语言标签：围栏藏掉后唯一看得见的语言标注 */
+.editor-side.live .cm-lp-lang {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  line-height: 14px;
+  color: var(--muted);
+  background: rgba(var(--tint), 0.06);
+  border-radius: 4px;
+  padding: 0 7px;
+  user-select: none;
+}
+
+/* 代码内容首行：给卡片上内边距（顶边留给了标签行） */
+.editor-side.live .cm-lp-code-first {
+  padding-top: 6px;
+}
+
+/* 收围栏行：整行藏掉、行高压成卡片的圆角底边（留白走 padding，绝不加 margin —— CM 红线） */
+.editor-side.live .cm-lp-fence-close {
+  font-size: 0;
+  line-height: 0;
+  padding: 0 16px 10px;
+  border-radius: 0 0 8px 8px;
+}
+
+/* 语法高亮：hljs 的 class 直接落在 mark 装饰上（markdown.ts highlightSpans 切区间） */
+.editor-side.live .hljs-comment {
+  color: var(--syntax-comment);
+  font-style: italic;
+}
+.editor-side.live .hljs-keyword,
+.editor-side.live .hljs-doctag {
+  color: var(--syntax-keyword);
+}
+.editor-side.live .hljs-string,
+.editor-side.live .hljs-regexp,
+.editor-side.live .hljs-addition {
+  color: var(--syntax-string);
+}
+.editor-side.live .hljs-number,
+.editor-side.live .hljs-literal {
+  color: var(--syntax-number);
+}
+.editor-side.live .hljs-title,
+.editor-side.live .hljs-section {
+  color: var(--syntax-title);
+}
+.editor-side.live .hljs-type,
+.editor-side.live .hljs-built_in,
+.editor-side.live .hljs-title.class_ {
+  color: var(--syntax-type);
+}
+.editor-side.live .hljs-attr,
+.editor-side.live .hljs-attribute,
+.editor-side.live .hljs-variable,
+.editor-side.live .hljs-template-variable,
+.editor-side.live .hljs-deletion {
+  color: var(--syntax-attr);
+}
+.editor-side.live .hljs-tag,
+.editor-side.live .hljs-name {
+  color: var(--syntax-tag);
+}
+.editor-side.live .hljs-meta,
+.editor-side.live .hljs-symbol {
+  color: var(--syntax-meta);
 }
 
 /* 同理：widget 的上下留白也走 padding，线本身交给 ::before 画 */

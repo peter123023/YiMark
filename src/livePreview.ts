@@ -23,6 +23,7 @@ import {
   type ViewUpdate,
   WidgetType,
 } from '@codemirror/view';
+import { ensureHighlighter, highlightSpans, isHighlighterReady } from './markdown';
 
 /** 图片表（文件名 → data URI）；草稿切换、增删图片时派发这个 effect 刷新 */
 export const setLiveImages = StateEffect.define<Record<string, string>>();
@@ -155,6 +156,28 @@ class TipIconWidget extends WidgetType {
 
   ignoreEvent(): boolean {
     return true;
+  }
+}
+
+/** 代码块语言标签：开围栏整行被藏掉后，语言标注就靠它（同时充当卡片的圆角顶边） */
+class CodeLabelWidget extends WidgetType {
+  constructor(private readonly lang: string) {
+    super();
+  }
+
+  eq(other: CodeLabelWidget): boolean {
+    return other.lang === this.lang;
+  }
+
+  toDOM(): HTMLElement {
+    const el = document.createElement('span');
+    el.className = 'cm-lp-lang';
+    el.textContent = this.lang;
+    return el;
+  }
+
+  ignoreEvent(): boolean {
+    return false;
   }
 }
 
@@ -402,17 +425,38 @@ function buildTableDecos(state: EditorState, previous?: DecorationSet): Decorati
 const INLINE_RE = new RegExp(
   [
     '!\\[\\[([^\\[\\]\\n]+)\\]\\]', // 1: ![[图片名]]
-    '==([^=\\n]+)==', // 2: ==高亮==
-    '\\*\\*([^*\\n]+)\\*\\*', // 3: **加粗**
-    '__([^_\\n]+)__', // 4: __加粗__
-    '~~([^~\\n]+)~~', // 5: ~~删除线~~
-    '\\*([^*\\n]+)\\*', // 6: *斜体*
-    '(?<![\\w])_([^_\\n]+)_(?![\\w])', // 7: _斜体_（避开 snake_case）
-    '\\[([^\\]\\n]*)\\]\\(([^)\\n]*)\\)', // 8,9: [文字](链接)
-    '\\[\\^([^\\]\\n]+)\\]', // 10: [^脚注]
+    '!\\[([^\\]\\n]*)\\]\\(((?:[^()\\n]|\\([^)\\n]*\\))*)\\)', // 2,3: ![alt](src) —— 目标放行一层成对括号（`截图 (1).png`）
+    '==([^=\\n]+)==', // 4: ==高亮==
+    '\\*\\*([^*\\n]+)\\*\\*', // 5: **加粗**
+    '__([^_\\n]+)__', // 6: __加粗__
+    '~~([^~\\n]+)~~', // 7: ~~删除线~~
+    '\\*([^*\\n]+)\\*', // 8: *斜体*
+    '(?<![\\w])_([^_\\n]+)_(?![\\w])', // 9: _斜体_（避开 snake_case）
+    '\\[([^\\]\\n]*)\\]\\(([^)\\n]*)\\)', // 10,11: [文字](链接)
+    '\\[\\^([^\\]\\n]+)\\]', // 12: [^脚注]
   ].join('|'),
   'g',
 );
+
+/**
+ * 原生图片目标 → 可显示地址。口径与 markdown.ts 的渲染规则一致：
+ * 绝对地址（http/协议相对/data/blob）直接用，本地路径解码后按文件名（含去目录）查图片库。
+ */
+function resolveImageSrc(raw: string, images: Record<string, string>): string | null {
+  if (/^(?:https?:)?\/\//i.test(raw) || /^(?:data|blob):/i.test(raw)) return raw;
+  let decoded = raw;
+  try {
+    decoded = decodeURIComponent(raw);
+  } catch {
+    // 编码不合法就用原值
+  }
+  for (const candidate of [decoded, raw]) {
+    if (images[candidate]) return images[candidate];
+    const base = candidate.split(/[\\/]/).pop() ?? candidate;
+    if (images[base]) return images[base];
+  }
+  return null;
+}
 
 /* ---------------- 块级编辑辅助（标记看不见了，得补回来） ---------------- */
 
@@ -539,14 +583,29 @@ function build(view: EditorView): DecorationSet {
   /**
    * 围栏代码块：必须从文档开头扫一遍才知道某一行在不在代码里，
    * 只扫可见区会在滚到代码中间时被误判。
-   * 取值：0 = 不在代码里，1 = 代码内容，2 = 围栏行本身（渲染时弱化）。
+   * 取值：0 = 不在代码里，1 = 代码内容，2 = 围栏行本身。
    */
   const inCode = new Uint8Array(doc.lines + 1);
+  /** 开围栏行 → 收围栏行与语言（渲染语言标签、做语法高亮要用块边界） */
+  const fenceBlocks = new Map<number, { close: number; lang: string }>();
+  const fenceClose = new Set<number>();
   let fence = false;
+  let openLine = 0;
+  let openLang = '';
   for (let n = 1; n <= doc.lines; n++) {
     const isFence = /^\s*(```|~~~)/.test(doc.line(n).text);
     inCode[n] = isFence ? 2 : fence ? 1 : 0;
-    if (isFence) fence = !fence;
+    if (isFence) {
+      if (!fence) {
+        fence = true;
+        openLine = n;
+        openLang = /^\s*(?:```|~~~)\s*(\S*)/.exec(doc.line(n).text)?.[1] ?? '';
+      } else {
+        fence = false;
+        fenceBlocks.set(openLine, { close: n, lang: openLang });
+        fenceClose.add(n);
+      }
+    }
   }
 
   /**
@@ -591,9 +650,26 @@ function build(view: EditorView): DecorationSet {
     const text = line.text;
 
       if (inCode[n]) {
-        const cls = inCode[n] === 2 ? 'cm-lp-codeblock cm-lp-fence' : 'cm-lp-codeblock';
-        decos.push(Decoration.line({ class: cls }).range(line.from));
-        continue; // 代码块里不做任何替换，原样编辑
+        const block = fenceBlocks.get(n);
+        if (block) {
+          // 开围栏行：整行换成语言标签 widget（atomic：光标进不了看不见的围栏行，
+          // 改语言去「对照/源码」模式改）。未配对的开围栏不进这里，仍显示原文提示用户补收尾
+          decos.push(Decoration.line({ class: 'cm-lp-codeblock cm-lp-fence-open' }).range(line.from));
+          decos.push(
+            Decoration.replace({ widget: new CodeLabelWidget(block.lang), atomic: true }).range(line.from, line.to),
+          );
+        } else if (fenceClose.has(n)) {
+          // 收围栏行：整行藏掉、行高压成代码卡的圆角底边（留白走 padding，绝不加 margin）
+          decos.push(Decoration.line({ class: 'cm-lp-codeblock cm-lp-fence-close' }).range(line.from));
+          decos.push(Decoration.replace({ atomic: true }).range(line.from, line.to));
+        } else {
+          // 代码内容行：卡片底 + 圆角交给首行（顶边由标签行充当）
+          const isFirst = inCode[n - 1] === 2;
+          decos.push(
+            Decoration.line({ class: `cm-lp-codeblock${isFirst ? ' cm-lp-code-first' : ''}` }).range(line.from),
+          );
+        }
+        continue; // 代码块里不做行内替换，原样编辑
       }
 
       // 分割线：整行替换成一条线
@@ -698,41 +774,69 @@ function build(view: EditorView): DecorationSet {
           continue;
         }
         if (m[2] !== undefined) {
+          // ![alt](src)：原生图片语法，地址口径与预览渲染一致（绝对地址直用、本地查库）；
+          // 解析不到就留原文 —— 与 ![[ ]] 的兜底行为一致
+          const src = resolveImageSrc(m[3], images);
+          if (src) {
+            decos.push(Decoration.replace({ widget: new ImageWidget(src, m[2]), atomic: true }).range(s, e));
+          }
+          continue;
+        }
+        if (m[4] !== undefined) {
           decos.push(Decoration.mark({ class: 'cm-lp-mark' }).range(s + 2, e - 2));
           decos.push(HIDE.range(s, s + 2));
           decos.push(HIDE.range(e - 2, e));
           continue;
         }
-        if (m[3] !== undefined || m[4] !== undefined) {
+        if (m[5] !== undefined || m[6] !== undefined) {
           decos.push(Decoration.mark({ class: 'cm-lp-strong' }).range(s + 2, e - 2));
           decos.push(HIDE.range(s, s + 2));
           decos.push(HIDE.range(e - 2, e));
           continue;
         }
-        if (m[5] !== undefined) {
+        if (m[7] !== undefined) {
           decos.push(Decoration.mark({ class: 'cm-lp-del' }).range(s + 2, e - 2));
           decos.push(HIDE.range(s, s + 2));
           decos.push(HIDE.range(e - 2, e));
           continue;
         }
-        if (m[6] !== undefined || m[7] !== undefined) {
+        if (m[8] !== undefined || m[9] !== undefined) {
           decos.push(Decoration.mark({ class: 'cm-lp-em' }).range(s + 1, e - 1));
           decos.push(HIDE.range(s, s + 1));
           decos.push(HIDE.range(e - 1, e));
           continue;
         }
-        if (m[8] !== undefined) {
+        if (m[10] !== undefined) {
           // [文字](链接)：藏掉方括号和 (url)，只留文字
-          const textEnd = s + 1 + m[8].length;
+          const textEnd = s + 1 + m[10].length;
           decos.push(Decoration.mark({ class: 'cm-lp-link' }).range(s + 1, textEnd));
           decos.push(HIDE.range(s, s + 1));
           decos.push(HIDE.range(textEnd, e));
           continue;
         }
-        if (m[10] !== undefined) {
+        if (m[12] !== undefined) {
           decos.push(Decoration.mark({ class: 'cm-lp-fnref' }).range(s, e));
         }
       }
+  }
+
+  /**
+   * 代码块语法高亮：整块取文本 → hljs tokenize → 按偏移映射回文档位置。
+   * mark 装饰只上色不替换文本，代码仍然可以直接编辑；
+   * tokenize 结果走 markdown.ts 的 LRU 缓存，每次按键不会反复解析。
+   */
+  for (const [open, block] of fenceBlocks) {
+    if (!isHighlighterReady() || !block.lang) continue;
+    const blockFrom = doc.line(open).to;
+    const blockTo = doc.line(block.close).from;
+    if (blockTo <= blockFrom) continue;
+    const spans = highlightSpans(doc.sliceString(blockFrom, blockTo), block.lang);
+    if (!spans) continue;
+    for (const sp of spans) {
+      const s = blockFrom + sp.from;
+      const e = Math.min(blockFrom + sp.to, blockTo);
+      if (e > s) decos.push(Decoration.mark({ class: sp.cls }).range(s, e));
+    }
   }
 
   // DecorationSet 是 RangeSet<Decoration> 的类型别名，构造走 Decoration.set
@@ -742,18 +846,33 @@ function build(view: EditorView): DecorationSet {
 const livePlugin = ViewPlugin.fromClass(
   class {
     decorations: DecorationSet;
+    /** hljs 就绪状态：懒加载完成的那一拍要整篇补一次高亮装饰 */
+    private wasHlReady = isHighlighterReady();
 
     constructor(view: EditorView) {
       liveEditorView = view; // 表格 widget 的自持监听派发事务时要用
       this.decorations = build(view);
+      if (!this.wasHlReady) {
+        // 高亮器懒加载就绪后派发一次空事务触发重建，代码块高亮才能补上
+        void ensureHighlighter().then(() => {
+          try {
+            view.dispatch({});
+          } catch {
+            // 编辑器已销毁（切模式/卸载竞态），忽略
+          }
+        });
+      }
     }
 
     update(u: ViewUpdate) {
       const imagesChanged = u.transactions.some((t) =>
         t.effects.some((e) => e.is(setLiveImages)),
       );
+      const hlReady = isHighlighterReady();
+      const hlJustReady = hlReady && !this.wasHlReady;
+      this.wasHlReady = hlReady;
       // selectionSet 也要重建：表格 widget 的显隐取决于光标在不在块内
-      if (u.docChanged || u.viewportChanged || u.selectionSet || imagesChanged) {
+      if (u.docChanged || u.viewportChanged || u.selectionSet || imagesChanged || hlJustReady) {
         this.decorations = build(u.view);
       }
     }
