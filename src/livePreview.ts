@@ -13,7 +13,7 @@
  * 文档始终是纯 Markdown：复制到公众号、导出、字数统计都走同一份文本，不会因为渲染而失真。
  */
 
-import { Range, StateEffect, StateField, type EditorState, type Extension, type Text } from '@codemirror/state';
+import { EditorState, Range, StateEffect, StateField, type Extension, type Text } from '@codemirror/state';
 import {
   Decoration,
   type DecorationSet,
@@ -37,6 +37,8 @@ const imagesField = StateField.define<Record<string, string>>({
 
 /** 藏起一段标记（复用同一实例：Decoration 是不可变值，可以多处引用） */
 const HIDE = Decoration.replace({});
+/** 藏 + atomic：光标不允许落在被藏字符的外侧（表格首尾竖线用，防 End 键把内容写到表格语法外） */
+const HIDE_ATOMIC = Decoration.replace({ atomic: true });
 
 /* ---------------- 替换用的小部件 ---------------- */
 
@@ -421,6 +423,43 @@ const liveKeymap = keymap.of([
   { key: 'Backspace', run: eatBlockMark },
 ]);
 
+/**
+ * 表格行守卫：表格的首尾竖线是隐藏的语法字符，光标落在行尾（末尾竖线之后）
+ * 打字会把内容写到表格语法外，整行当场掉出表格。
+ * 这里把这种「纯插入」改写到末尾竖线之前；分隔行是结构行，直接禁止改动。
+ */
+const tableGuard = EditorState.transactionFilter.of((tr) => {
+  if (!tr.docChanged) return tr;
+  const start = tr.startState;
+  const doc = start.doc;
+  const sel = start.selection.main;
+  if (!sel.empty) return tr;
+  const line = doc.lineAt(sel.head);
+  const inCode = new Uint8Array(doc.lines + 1);
+  let fence = false;
+  for (let n = 1; n <= doc.lines; n++) {
+    const isF = /^\s*(```|~~~)/.test(doc.line(n).text);
+    inCode[n] = isF ? 2 : fence ? 1 : 0;
+    if (isF) fence = !fence;
+  }
+  const blk = scanTables(doc, inCode).find((b) => line.number >= b.s && line.number <= b.e);
+  if (!blk) return tr;
+  if (line.number === blk.s + 1) return []; // 分隔行：只许看不许改
+  const pipePos = line.from + line.text.lastIndexOf('|');
+  if (sel.head <= pipePos) return tr;
+  // 只改写「单一纯插入」；替换/删除/多光标放行（后者由用户自己承担）
+  let ok = true;
+  let text = '';
+  let count = 0;
+  tr.changes.iterChanges((fromA, toA, _fb, _tb, inserted) => {
+    count++;
+    if (count === 1 && fromA === toA) text = inserted.toString();
+    else ok = false;
+  });
+  if (!ok || count !== 1) return tr;
+  return { changes: { from: pipePos, insert: text }, selection: { anchor: pipePos + text.length } };
+});
+
 /* ---------------- 装饰构建 ---------------- */
 
 function build(view: EditorView): DecorationSet {
@@ -479,6 +518,13 @@ function build(view: EditorView): DecorationSet {
     }
   }
 
+  /** 表格块：光标在块内时按「表格样子的可编辑行」装饰（widget 态由 tableField 负责） */
+  const tblByLine = new Map<number, { s: number; e: number }>();
+  for (const b of scanTables(doc, inCode)) {
+    for (let k = b.s; k <= b.e; k++) tblByLine.set(k, b);
+  }
+  const head = state.selection.main.head;
+
   for (let n = 1; n <= doc.lines; n++) {
     const line = doc.line(n);
     const text = line.text;
@@ -487,6 +533,45 @@ function build(view: EditorView): DecorationSet {
         const cls = inCode[n] === 2 ? 'cm-lp-codeblock cm-lp-fence' : 'cm-lp-codeblock';
         decos.push(Decoration.line({ class: cls }).range(line.from));
         continue; // 代码块里不做任何替换，原样编辑
+      }
+
+      // 表格块：widget 态（光标在外）不加行内装饰，整块留给 tableField 的块替换；
+      // 源码态（光标进块编辑）把管道行整理成「表格样子的可编辑行」——
+      // 藏首尾竖线、内竖线变淡分隔、单元格加内边距、--- 分隔行整行隐藏
+      const tbl = tblByLine.get(n);
+      if (tbl) {
+        const bFrom = doc.line(tbl.s).from;
+        const bTo = doc.line(tbl.e).to;
+        if (head < bFrom || head > bTo) continue; // widget 态
+        if (n === tbl.s + 1) {
+          decos.push(HIDE_ATOMIC.range(line.from, line.to)); // 分隔行：整行隐掉，留一个空行当行距
+          continue;
+        }
+        const rowCls = ['cm-lp-trow'];
+        if (n === tbl.s) rowCls.push('cm-lp-trow-first');
+        if (n === tbl.e) rowCls.push('cm-lp-trow-last');
+        decos.push(Decoration.line({ class: rowCls.join(' ') }).range(line.from));
+        const text = line.text;
+        const pipeIdx: number[] = [];
+        for (let i = 0; i < text.length; i++) if (text[i] === '|') pipeIdx.push(i);
+        if (pipeIdx.length >= 2) {
+          const first = pipeIdx[0];
+          const last = pipeIdx[pipeIdx.length - 1];
+          for (const idx of pipeIdx) {
+            const at = line.from + idx;
+            if (idx === first || idx === last) {
+              decos.push(HIDE_ATOMIC.range(at, at + 1)); // 首尾竖线：藏，且光标进不来（End/Home 不会落到表格语法外）
+            } else {
+              decos.push(Decoration.mark({ class: 'cm-lp-pipe' }).range(at, at + 1)); // 内竖线：淡分隔
+            }
+          }
+          for (let i = 0; i < pipeIdx.length - 1; i++) {
+            const cs = line.from + pipeIdx[i] + 1;
+            const ce = line.from + (i + 1 < pipeIdx.length - 1 ? pipeIdx[i + 1] : last);
+            if (ce > cs) decos.push(Decoration.mark({ class: 'cm-lp-cell' }).range(cs, ce));
+          }
+        }
+        continue;
       }
 
       // 分割线：整行替换成一条线
@@ -672,5 +757,5 @@ const checkboxClick = EditorView.domEventHandlers({
 
 /** 直接编辑模式的全部扩展；用 Compartment 装载，才能在不重建编辑器开关 */
 export function livePreview(): Extension {
-  return [imagesField, tableField, tableClick, livePlugin, checkboxClick, liveKeymap];
+  return [imagesField, tableField, tableClick, tableGuard, livePlugin, checkboxClick, liveKeymap];
 }
