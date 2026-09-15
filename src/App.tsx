@@ -634,6 +634,7 @@ export default function App() {
             live={isLive}
             images={images}
             widthPct={editorPct}
+            mode={viewMode}
           />
           <div
             className="split-bar"

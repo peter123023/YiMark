@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useMemo, useRef, useState } from 'react';
+import { forwardRef, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ArrowCounterClockwise, Code, CodeBlock, Link, ListBullets, ListChecks, ListDashes, LockSimple, LockSimpleOpen, Minus, Quotes, Table, TextB, TextH, TextHFour, TextHOne, TextHThree, TextHTwo, TextItalic } from '@phosphor-icons/react';
 import { EditorView, keymap, lineNumbers } from '@codemirror/view';
 import { Compartment, EditorState } from '@codemirror/state';
@@ -42,10 +42,12 @@ interface Props {
    * nonce 用来区分「同一行被再次请求」，否则重复点同一张图不会触发 effect。
    */
   jumpRequest: { line: number; nonce: number } | null;
+  /** 当前工作区模式（edit/split/preview）：切换时用于继承滚动位置 */
+  mode: 'edit' | 'split' | 'preview';
 }
 
 const EditorPane = forwardRef<HTMLElement, Props>(function EditorPane(
-  { value, onChange, onAddImage, imageNames, draftId, sync, collapsed, live, images, widthPct, jumpRequest },
+  { value, onChange, onAddImage, imageNames, draftId, sync, collapsed, live, images, widthPct, jumpRequest, mode },
   ref,
 ) {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -229,6 +231,98 @@ const EditorPane = forwardRef<HTMLElement, Props>(function EditorPane(
     if (!view) return;
     view.dispatch({ effects: liveComp.reconfigure(live ? livePreview() : []) });
   }, [live, liveComp]);
+
+  /**
+   * 切工作区模式时继承滚动位置。渲染态（编辑）与源码态（对照）行高差很大，
+   * CodeMirror 实例虽在，但只按 scrollTop 数值保留，同一数值落到的是完全不同的内容 ——
+   * 所以按「视口顶部的行号」记录，等新模式行高度量稳定后把该行行首对齐到视口顶部。
+   * 刻意不带行内比例：两种模式的行高与行距都不同，比例不是守恒量，带着它往返会累积漂移；
+   * 吸附到行首最多差一行，但双向幂等。
+   */
+  const posOnModeSwitch = useRef<{ line: number } | null>(null);
+  const prevModeRef = useRef(mode);
+  // layout effect：此时 DOM 已切到新模式（可能已收起），但装饰还没 reconfigure，量到的仍是旧模式行高
+  useLayoutEffect(() => {
+    const prev = prevModeRef.current;
+    prevModeRef.current = mode;
+    const view = viewRef.current;
+    if (!view || prev === mode) return;
+    // 上一个模式编辑器被收起（预览独占）：没有可继承的滚动位置
+    if (prev === 'preview') {
+      posOnModeSwitch.current = null;
+      return;
+    }
+    const docTop = view.scrollDOM.scrollTop - view.documentPadding.top;
+    if (docTop <= 0) {
+      posOnModeSwitch.current = { line: 1 };
+      return;
+    }
+    const block = view.lineBlockAtHeight(docTop);
+    posOnModeSwitch.current = { line: view.state.doc.lineAt(block.from).number };
+  }, [mode]);
+
+  // 恢复必须跑在 reconfigure（上面的 useEffect）之后。注意 CM 刚切完模式时，
+  // 视口外行的高度还是估算值，按高度图定位会差好几行；而 CM 量出新高度后的稳定化
+  // 又会把内容推回旧位置 —— 所以粗定位之后，用 requestMeasure 的 write 回调
+  // 连续多轮「量完立刻校正」，直到 CM 的高度图收敛为止
+  useEffect(() => {
+    const view = viewRef.current;
+    const saved = posOnModeSwitch.current;
+    if (!view || !saved || collapsed) return;
+    posOnModeSwitch.current = null;
+    const targetLine = Math.min(Math.max(1, saved.line), view.state.doc.lines);
+    let cancelled = false;
+    /**
+     * 对齐目标行：行顶 + 行内比例处 = 内容区顶部。
+     * 注意 domAtPos 对还没渲染的行会返回邻近的行 —— 必须用 posAtDOM 验明
+     * 拿到的确实是目标行，否则会把视口顶到错误的位置。
+     * 返回 'ok' = 已对齐无需动；'moved' = 本帧施加了校正；'fail' = 目标行不可见/异常。
+     */
+    const align = (): 'ok' | 'moved' | 'fail' => {
+      try {
+        const lineObj = view.state.doc.line(targetLine);
+        const dom = view.domAtPos(lineObj.from);
+        const owner = dom.node.nodeType === 1 ? (dom.node as HTMLElement) : dom.node.parentElement;
+        const lineEl = owner?.closest?.('.cm-line');
+        if (!lineEl || view.posAtDOM(lineEl, 0) !== lineObj.from) return 'fail';
+        const r = lineEl.getBoundingClientRect();
+        const sr = view.scrollDOM.getBoundingClientRect();
+        const delta = r.top - (sr.top + view.documentPadding.top);
+        if (Math.abs(delta) >= 1) {
+          view.scrollDOM.scrollTop += delta;
+          return 'moved';
+        }
+        return 'ok';
+      } catch {
+        // 编辑器已销毁（快速连点切档的竞态），忽略
+        return 'fail';
+      }
+    };
+    // 粗定位：高度图估算（目标行此时多半还没渲染，误差靠后面的逐帧对齐抹平）
+    try {
+      const from = view.state.doc.line(targetLine).from;
+      const block = view.lineBlockAt(from);
+      view.scrollDOM.scrollTop = Math.max(0, block.top - view.documentPadding.top);
+    } catch {
+      // 同上，销毁竞态忽略
+    }
+    // 逐帧对齐直到连续 30 帧无需校正（约半秒）：CM 的量高与稳定化会在切换后
+    // 持续好多帧，过早退出会被它的 stabilize 把内容又推离目标位置
+    let stable = 0;
+    let frames = 0;
+    const ids: number[] = [];
+    const tick = () => {
+      if (cancelled) return;
+      frames++;
+      stable = align() === 'ok' ? stable + 1 : 0;
+      if (stable < 30 && frames < 180) ids.push(requestAnimationFrame(tick));
+    };
+    ids.push(requestAnimationFrame(tick));
+    return () => {
+      cancelled = true;
+      ids.forEach((id) => cancelAnimationFrame(id));
+    };
+  }, [mode, collapsed]);
 
   // 锁定热开关：readOnly 挡输入类事务，editable=false 连光标都不给
   useEffect(() => {
