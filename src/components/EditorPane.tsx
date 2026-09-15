@@ -526,6 +526,16 @@ const EditorPane = forwardRef<HTMLElement, Props>(function EditorPane(
           {live ? '编辑' : '源码'}
         </span>
         <div className="pane-head-right">
+          {/* 编辑锁：锁住后编辑器 readOnly、格式按钮全部失效；放大纲左侧 */}
+          <button
+            className={`outline-toggle lock-btn ${locked ? 'locked' : ''}`}
+            title={locked ? '已锁定 · 点击解锁编辑' : '锁定编辑，防止误改'}
+            aria-label={locked ? '解锁编辑器' : '锁定编辑器'}
+            aria-pressed={locked}
+            onClick={() => setLocked((v) => !v)}
+          >
+            {locked ? <LockSimple size={15} weight="bold" /> : <LockSimpleOpen size={15} weight="bold" />}
+          </button>
           <button
             className={`outline-toggle ${outlineOpen ? 'active' : ''}`}
             title="大纲"
@@ -564,17 +574,6 @@ const EditorPane = forwardRef<HTMLElement, Props>(function EditorPane(
       )}
       {/* Markdown 格式工具栏 */}
       <div className="md-toolbar" role="toolbar" aria-label="Markdown 格式">
-        {/* 编辑锁：锁住后编辑器 readOnly、格式按钮全部失效 */}
-        <button
-          className={`md-toolbar-btn lock-btn ${locked ? 'locked' : ''}`}
-          title={locked ? '已锁定 · 点击解锁编辑' : '锁定编辑，防止误改'}
-          aria-label={locked ? '解锁编辑器' : '锁定编辑器'}
-          aria-pressed={locked}
-          onClick={() => setLocked((v) => !v)}
-        >
-          {locked ? <LockSimple size={ICON} weight="bold" /> : <LockSimpleOpen size={ICON} weight="bold" />}
-        </button>
-        <span className="md-toolbar-divider" />
         {/* 标题层级下拉 */}
         <div className="md-toolbar-dropdown" ref={headingWrapRef}>
           <button

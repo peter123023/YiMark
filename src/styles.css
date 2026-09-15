@@ -883,11 +883,11 @@ button {
   margin: 0 5px;
 }
 
-/* 编辑锁：开锁时弱化，锁定时强调色高亮提示「当前不可编辑」；锁定态其余按钮变灰 */
-.md-toolbar-btn.lock-btn {
+/* 编辑锁（顶栏、大纲左侧）：开锁时弱化，锁定时强调色高亮提示「当前不可编辑」 */
+.lock-btn {
   color: var(--faint);
 }
-.md-toolbar-btn.lock-btn.locked {
+.lock-btn.locked {
   color: var(--accent);
 }
 .md-toolbar-btn:disabled {
