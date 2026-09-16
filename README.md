@@ -1,4 +1,4 @@
-# 火星编辑器 (Mars Editor)
+# 易码 (Yimark)
 
 Markdown 写作，一键转成**内联样式**富文本，粘贴到微信公众号编辑器即可无损还原。
 
@@ -41,17 +41,24 @@ npm install
 npm run dev      # 开发服务器
 npm run build    # 类型检查 + 生产构建
 npm run preview  # 预览构建产物
-npm run deploy   # 构建并发到 Cloudflare Pages（mars-editor.pages.dev）
+npm run deploy   # 构建并发到 Cloudflare Pages（yimark.pages.dev）
 ```
 
 ## 发版
 
-线上是 Cloudflare Pages 项目 `mars-editor`，**直传部署，没有接 GitHub 自动构建** ——
+线上是 Cloudflare Pages 项目 `yimark`，**直传部署，没有接 GitHub 自动构建** ——
 推代码到 main 不会更新线上，必须跑一次：
 
 ```bash
 npm run deploy
 ```
 
-发完可以用 `npx wrangler pages deployment list --project-name mars-editor` 核对，
+发完可以用 `npx wrangler pages deployment list --project-name yimark` 核对，
 最新一条的 Source 应当是刚推上去的 commit。
+
+## 存储位置
+
+草稿与偏好存在 localStorage（`yimark:` 前缀），图片存在 IndexedDB 库 `yimark`。
+
+**改名前的数据不用手动搬**：应用启动时会一次性把 `wechat-mp-editor:` 前缀的 localStorage
+搬到 `yimark:` 下，并把旧图片库 `wechat-mp-editor` 整体迁进 `yimark` 后删掉旧库。

@@ -9,15 +9,16 @@ interface Props {
 }
 
 /**
- * 左侧主题竖栏。
+ * 顶栏「主题」下拉的内容（开关与定位由 Toolbar 负责）。
  *
  * 每张卡片是用该主题自己的令牌画出来的迷你纸样 —— 纸底、衬线/等宽的「Aa」、
  * 强调色短条、两根正文线。比一个只有名字的下拉更直观：不用切换就能看出风格差异。
  *
- * 浅色与深色分区展示：深色卡片视觉重量大，混在浅色里会显得突兀，
- * 单独归到「深色」小节、排在浅色之后（默认要往下滚才看得到）。
+ * 浅色与深色分区：深色卡片视觉重量大，混在浅色里会显得突兀，单独归到「深色」小节。
+ *
+ * 选主题 / 换密度都不关闭菜单 —— 预览是实时变的，留着方便来回比对。
  */
-export default function ThemeRail({ themeId, onThemeChange, densityId, onDensityChange }: Props) {
+export default function ThemeMenu({ themeId, onThemeChange, densityId, onDensityChange }: Props) {
   const renderCard = (th: Theme) => {
     const active = th.id === themeId;
     return (
@@ -43,23 +44,21 @@ export default function ThemeRail({ themeId, onThemeChange, densityId, onDensity
   };
 
   return (
-    <nav className="theme-rail" aria-label="排版主题">
-      <div className="rail-head">主题</div>
-      <div className="rail-list" role="radiogroup" aria-label="排版主题">
-        <div className="rail-section">
-          <div className="rail-section-label">浅色</div>
-          {lightThemes.map(renderCard)}
-        </div>
-        <div className="rail-section">
-          <div className="rail-section-label">深色</div>
-          {darkThemes.map(renderCard)}
-        </div>
+    <div className="theme-menu">
+      <div className="menu-section-label">浅色</div>
+      <div className="theme-grid" role="radiogroup" aria-label="浅色主题">
+        {lightThemes.map(renderCard)}
+      </div>
+
+      <div className="menu-section-label">深色</div>
+      <div className="theme-grid" role="radiogroup" aria-label="深色主题">
+        {darkThemes.map(renderCard)}
       </div>
 
       {/* 密度：同一套主题下的字号 / 行距 / 段距整体缩放，「标准」即主题原设计值 */}
-      <div className="rail-foot">
-        <div className="rail-section-label">密度</div>
-        <div className="density-group" role="radiogroup" aria-label="排版密度">
+      <div className="theme-menu-foot">
+        <div className="menu-section-label">密度</div>
+        <div className="density-group row" role="radiogroup" aria-label="排版密度">
           {DENSITIES.map((d) => (
             <button
               key={d.id}
@@ -73,6 +72,6 @@ export default function ThemeRail({ themeId, onThemeChange, densityId, onDensity
           ))}
         </div>
       </div>
-    </nav>
+    </div>
   );
 }

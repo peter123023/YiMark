@@ -3,7 +3,11 @@
  * 容量远大于 localStorage，适合多图长期保存；本地图片注册表存这里。
  */
 
-const DB_NAME = 'wechat-mp-editor';
+const DB_NAME = 'yimark';
+/** 改名前的图片库名（Mars Editor / wechat-mp-editor 时代），迁移完即删 */
+const LEGACY_DB_NAME = 'wechat-mp-editor';
+/** 迁移只跑一次的标记位 */
+const MIGRATION_FLAG = 'yimark:imgdb-migrated';
 const STORE = 'images';
 
 export interface StoredImage {
@@ -13,9 +17,9 @@ export interface StoredImage {
   size: number;
 }
 
-function openDb(): Promise<IDBDatabase> {
+function openDb(name: string = DB_NAME): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 1);
+    const req = indexedDB.open(name, 1);
     req.onupgradeneeded = () => {
       if (!req.result.objectStoreNames.contains(STORE)) {
         req.result.createObjectStore(STORE, { keyPath: 'name' });
@@ -26,10 +30,62 @@ function openDb(): Promise<IDBDatabase> {
   });
 }
 
+/** 读出指定库里的全部图片记录（仅迁移用；库不存在或读失败都返回空） */
+function readAll(dbName: string): Promise<StoredImage[]> {
+  return new Promise((resolve) => {
+    const req = indexedDB.open(dbName, 1);
+    req.onupgradeneeded = () => {
+      if (!req.result.objectStoreNames.contains(STORE)) {
+        req.result.createObjectStore(STORE, { keyPath: 'name' });
+      }
+    };
+    req.onerror = () => resolve([]);
+    req.onsuccess = () => {
+      const db = req.result;
+      const done = (items: StoredImage[]) => {
+        db.close();
+        resolve(items);
+      };
+      if (!db.objectStoreNames.contains(STORE)) return done([]);
+      const tx = db.transaction(STORE, 'readonly');
+      const all = tx.objectStore(STORE).getAll();
+      all.onsuccess = () => done(all.result as StoredImage[]);
+      all.onerror = () => done([]);
+    };
+  });
+}
+
+/**
+ * 一次性迁移：把改名前的图片库整体搬进新库，然后删掉旧库。
+ * 先落标记位再干活 —— 迁移失败也不至于每次启动都重试一遍。
+ */
+async function migrateLegacyDb(): Promise<void> {
+  if (localStorage.getItem(MIGRATION_FLAG)) return;
+  localStorage.setItem(MIGRATION_FLAG, '1');
+  try {
+    const items = await readAll(LEGACY_DB_NAME);
+    if (!items.length) return;
+    const db = await openDb();
+    await new Promise<void>((resolve) => {
+      const tx = db.transaction(STORE, 'readwrite');
+      for (const item of items) tx.objectStore(STORE).put(item);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve();
+      tx.onabort = () => resolve();
+    });
+  } finally {
+    indexedDB.deleteDatabase(LEGACY_DB_NAME);
+  }
+}
+
 let dbPromise: Promise<IDBDatabase> | null = null;
 
 function getDb(): Promise<IDBDatabase> {
-  if (!dbPromise) dbPromise = openDb();
+  if (!dbPromise) {
+    dbPromise = migrateLegacyDb()
+      .catch(() => undefined)
+      .then(() => openDb());
+  }
   return dbPromise;
 }
 

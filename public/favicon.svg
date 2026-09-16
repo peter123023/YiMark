@@ -1,18 +1,14 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="火星编辑器">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="易码 Yimark">
   <!--
-    印章字标「火」：实心陶土橙底 + 白字。
-    笔画刻意加粗、字身放大、四笔之间拉开距离 —— 16px 下 CJK 字形最容易糊成一团，
-    细笔画和小留白在那个尺寸下会直接消失。字形走路径而非 <text>，
-    避免不同系统字体不一致甚至不渲染。
+    印章字标「Y」（Yimark 首字母）：实心陶土橙底 + 白字。
+    笔画刻意加粗、两臂与竖笔之间拉开距离 —— 16px 下细笔画和小留白最容易糊成一团。
+    字形走路径而非 <text>，避免不同系统字体不一致甚至不渲染。
   -->
   <rect width="32" height="32" rx="7.5" fill="#d97757"/>
-  <g fill="none" stroke="#fff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round">
-    <!-- 上方两点：短而外扩，和中间的撇捺拉开空隙 -->
-    <path d="M9.4 9.2 8.1 12.6"/>
-    <path d="M22.6 9.2 23.9 12.6"/>
-    <!-- 丿：自顶部中间向左下撇出 -->
-    <path d="M17.4 7.4c0 5.9-2.3 11.2-6.9 16.6"/>
-    <!-- 乀：自中部向右下捺出 -->
-    <path d="M15.9 16.2 22.8 24"/>
+  <g fill="none" stroke="#fff" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round">
+    <!-- 两臂：在中心汇成圆角交点 -->
+    <path d="M9.4 8.2 16 16.6 22.6 8.2"/>
+    <!-- 竖笔：自交点向下 -->
+    <path d="M16 16.6V23.8"/>
   </g>
 </svg>

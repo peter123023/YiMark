@@ -56,7 +56,7 @@ const DEVICES: { id: PreviewDevice; name: string; hint: string }[] = [
 ];
 
 /** Per browser, like the theme choice: it is how you like to look, not part of the draft */
-const STORAGE_DEVICE = 'wechat-mp-editor:preview-device';
+const STORAGE_DEVICE = 'yimark:preview-device';
 
 function readDevice(): PreviewDevice {
   const v = localStorage.getItem(STORAGE_DEVICE);
@@ -420,7 +420,7 @@ export default function PreviewPane({ body, theme, hasImage, resizeKey, sync }: 
               <div className="article-head">
                 <h1 className="head-title">{title || '未命名文章'}</h1>
                 <div className="meta">
-                  <span className="author">火星</span>
+                  <span className="author">易码</span>
                   <span className="byline">
                     {today.getFullYear()} 年 {today.getMonth() + 1} 月 {today.getDate()} 日
                   </span>

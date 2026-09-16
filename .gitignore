@@ -23,3 +23,9 @@ pnpm-debug.log*
 .env
 .env.*
 !.env.example
+
+# 本地测试截图与工具产物（只忽略根目录 png，public/ 下的图标不受影响）
+/*.png
+.playwright-cli/
+.codebuddy/
+modesnap.yml
