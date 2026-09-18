@@ -439,6 +439,19 @@ const INLINE_RE = new RegExp(
 );
 
 /**
+ * 只匹配两种图片语法的正则（删除时用，见 eatImageAtCursor）。
+ * 不复用 INLINE_RE：那里一个分组对应一种语法，拿它去删会把**加粗**之类的
+ * 整段也吃掉。图片这两条的前两个分组与 INLINE_RE 保持一致，便于对照维护。
+ */
+const IMAGE_RE = new RegExp(
+  [
+    '!\\[\\[([^\\[\\]\\n]+)\\]\\]', // ![[图片名]]
+    '!\\[([^\\]\\n]*)\\]\\(((?:[^()\\n]|\\([^)\\n]*\\))*)\\)', // ![alt](src)
+  ].join('|'),
+  'g',
+);
+
+/**
  * 原生图片目标 → 可显示地址。口径与 markdown.ts 的渲染规则一致：
  * 绝对地址（http/协议相对/data/blob）直接用，本地路径解码后按文件名（含去目录）查图片库。
  */
@@ -567,9 +580,44 @@ function eatBlockMark(view: EditorView): boolean {
   return false;
 }
 
+/**
+ * 找到紧邻光标的图片语法段（![[name]] 或 ![alt](src)）。
+ *
+ * 为什么需要这个：图片被 atomic 的 replace 装饰换成了 widget，光标永远停不进
+ * `![[name]]` 内部，落在图片两侧。此时按退格，CodeMirror 会把整个 widget 当作
+ * 一个原子跳过 —— 结果是图片渲染消失、但源码文本原样留下，用户看到的就是
+ * 「图没了，残留一串 ![[xxx.gif]]」。这里显式把整段文本一起删掉。
+ *
+ * dir = -1：退格，光标紧贴图片**右**边（即 head 落在图片结束处）
+ * dir = 1：Delete，光标紧贴图片**左**边（即 head 落在图片起始处）
+ */
+function eatImageAtCursor(view: EditorView, dir: -1 | 1): boolean {
+  const { state } = view;
+  const range = state.selection.main;
+  if (!range.empty) return false;
+  const head = range.head;
+  const line = state.doc.lineAt(head);
+  if (/^\s*$/.test(line.text)) return false;
+  const images = state.field(imagesField, false) ?? {};
+
+  for (const m of line.text.matchAll(IMAGE_RE)) {
+    const s = line.from + (m.index ?? 0);
+    const e = s + m[0].length;
+    if (head !== (dir === -1 ? e : s)) continue;
+    // 解析不到图的引用（坏名字、外链失效）在编辑器里显示为原文，
+    // 那种情况该按字删，交给默认行为，别把用户正在编辑的一段一口气吃掉
+    const src = m[1] !== undefined ? images[m[1]] : resolveImageSrc(m[3], images);
+    if (!src) return false;
+    view.dispatch({ changes: { from: s, to: e, insert: '' } });
+    return true;
+  }
+  return false;
+}
+
 const liveKeymap = keymap.of([
   { key: 'Enter', run: continueBlock },
-  { key: 'Backspace', run: eatBlockMark },
+  { key: 'Backspace', run: (v) => eatImageAtCursor(v, -1) || eatBlockMark(v) },
+  { key: 'Delete', run: (v) => eatImageAtCursor(v, 1) },
 ]);
 
 /* ---------------- 装饰构建 ---------------- */
