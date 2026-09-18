@@ -35,20 +35,57 @@ export function downscaleImage(file: File, maxDim = 1280, quality = 0.82): Promi
 }
 
 /**
+ * 给新图片挑一个不与现有注册表冲突的名字。
+ *
+ * 必须做这件事的原因：粘贴的截图文件名几乎都叫 `image.png`（macOS/Windows 截图、
+ * 聊天工具复制的图都是），而注册表是以文件名为键的 —— 直接用文件名会把旧图覆盖掉，
+ * 文档里所有引用 `![[image.png]]` 的旧图会集体变成新粘的这张。
+ *
+ * 规则：内容与已有图片完全一致就复用那个名字（同一张图重复粘贴不该产生副本）；
+ * 否则加 `-2`/`-3` 后缀直到没被占用。reserved 收集本批次已分配的名字，
+ * 因为 onAdd 走的是 React state，同一批里的后续文件看不到前一个的写入。
+ */
+export function uniqueImageName(
+  rawName: string,
+  dataUrl: string,
+  existing: Record<string, string>,
+  reserved: Set<string>,
+): string {
+  const same = Object.entries(existing).find(([, url]) => url === dataUrl);
+  if (same) return same[0];
+  const taken = (n: string) => n in existing || reserved.has(n);
+  const name = rawName || 'image.png';
+  if (!taken(name)) return name;
+  const dot = name.lastIndexOf('.');
+  const stem = dot > 0 ? name.slice(0, dot) : name;
+  const ext = dot > 0 ? name.slice(dot) : '';
+  for (let i = 2; i < 1000; i++) {
+    const candidate = `${stem}-${i}${ext}`;
+    if (!taken(candidate)) return candidate;
+  }
+  return `${stem}-${Date.now()}${ext}`;
+}
+
+/**
  * 批量注册图片文件：逐张降采样后调用 onAdd(name, dataUrl)。
  * 返回成功/失败的文件名，便于插入 ![[name]] 或提示。
+ * existing 传当前注册表（文件名 → data URI），用于重名去冲突。
  */
 export async function registerImageFiles(
   files: File[],
   onAdd: (name: string, dataUrl: string) => void,
+  existing: Record<string, string> = {},
 ): Promise<{ names: string[]; failures: string[] }> {
   const names: string[] = [];
   const failures: string[] = [];
+  const reserved = new Set<string>();
   for (const f of files) {
     try {
       const dataUrl = await downscaleImage(f);
-      onAdd(f.name, dataUrl);
-      names.push(f.name);
+      const name = uniqueImageName(f.name, dataUrl, existing, reserved);
+      reserved.add(name);
+      onAdd(name, dataUrl);
+      names.push(name);
     } catch (err) {
       console.warn('图片处理失败', f.name, err);
       failures.push(f.name);

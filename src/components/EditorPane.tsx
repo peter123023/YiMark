@@ -67,6 +67,10 @@ const EditorPane = forwardRef<HTMLElement, Props>(function EditorPane(
   // 补全候选走 ref：CodeMirror 扩展只在挂载时建一次，直接闭包会永远停在挂载时的空列表
   const imageNamesRef = useRef(imageNames);
   imageNamesRef.current = imageNames;
+  // 图片注册表也走 ref：连粘两张时闭包里的 images 还是上一次渲染的旧表，
+  // 去重会因此漏判（第二张仍拿到同一个名字）
+  const imagesRef = useRef(images);
+  imagesRef.current = images;
   /** 编辑器最近一次上报给父组件的文本（用来区分「自己改的」和「外部改的」） */
   const lastEmittedRef = useRef(value);
   const [saved, setSaved] = useState(true);
@@ -82,7 +86,7 @@ const EditorPane = forwardRef<HTMLElement, Props>(function EditorPane(
   const insertImages = async (files: File[]) => {
     const view = viewRef.current;
     if (!view || lockedRef.current) return;
-    const { names } = await registerImageFiles(files, onAddImage);
+    const { names } = await registerImageFiles(files, onAddImage, imagesRef.current);
     if (!names.length || !view) return;
     const block = names.map((n) => `![[${n}]]\n`).join('');
     view.dispatch({
