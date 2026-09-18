@@ -1035,10 +1035,10 @@ button {
   outline: none;
 }
 
-/* CodeMirror 滚动条沿用全局样式 */
+/* CodeMirror 滚动条沿用全局样式（.article-scroll 不在此列：预览文章区的
+   滚动条整体隐藏，见 .article-scroll 规则处的说明） */
 .code-edit .cm-scroller::-webkit-scrollbar,
-.phone-stage::-webkit-scrollbar,
-.article-scroll::-webkit-scrollbar {
+.phone-stage::-webkit-scrollbar {
   width: 10px;
   height: 10px;
 }
@@ -1232,8 +1232,29 @@ button {
 .article-scroll {
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
+  /* 恒定滚动：槽位永不出现/消失，正文宽度恒定。
+     auto 的问题是滑到图片时才跨过滚动阈值：滚动条一出现就吃掉 9px，
+     图片按 max-width:100% 等比缩窄、高度跟着变，内容高度又跌回阈值以下，
+     滚动条消失 → 宽度回弹 → 图片又变高……如此往复，看起来就是「滑到图就闪」。
+     图片宽高比把这点抖动放大了，所以正文段落不明显、一到图就明显。
+     scroll 让槽位常驻，宽度自始至终不变。 */
+  overflow-y: scroll;
   position: relative;
+}
+
+/*
+ * 预览模拟的是手机屏：真机上本来就没有常驻滚动条，这里也完全不显示。
+ * 滚动功能不受影响（滚轮 / 触控板 / 拖拽照常）。
+ *
+ * 不只是审美 —— scrollbar-gutter:stable 在自定义 ::-webkit-scrollbar 下
+ * 并不生效（Chrome 已知问题），classic 滚动条出现时照样挤压 9px 布局宽度，
+ * max-width:100% 的图片肉眼可见地缩一下。宽度为 0 后这个问题从根上消失，
+ * Firefox 走 scrollbar-width:none（见下方 @supports 块）。
+ */
+.article-scroll::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
 }
 
 /* 底部 home indicator：浮在内容之上，正文从下面滚过 */
@@ -1836,18 +1857,21 @@ button {
 @supports not selector(::-webkit-scrollbar) {
   .code-edit .cm-scroller,
   .phone-stage,
-  .article-scroll,
   .theme-dropdown,
   .tree-body,
   .outline-drawer {
     scrollbar-width: thin;
     scrollbar-color: rgba(90, 82, 68, 0.28) transparent;
   }
+
+  /* 预览文章区：滚动条完全不显示（同 ::-webkit-scrollbar 那条的理由） */
+  .article-scroll {
+    scrollbar-width: none;
+  }
 }
 
 .code-edit .cm-scroller::-webkit-scrollbar,
 .phone-stage::-webkit-scrollbar,
-.article-scroll::-webkit-scrollbar,
 .theme-dropdown::-webkit-scrollbar,
 .tree-body::-webkit-scrollbar,
 .outline-drawer::-webkit-scrollbar {
@@ -1857,7 +1881,6 @@ button {
 
 .code-edit .cm-scroller::-webkit-scrollbar-track,
 .phone-stage::-webkit-scrollbar-track,
-.article-scroll::-webkit-scrollbar-track,
 .theme-dropdown::-webkit-scrollbar-track,
 .tree-body::-webkit-scrollbar-track,
 .outline-drawer::-webkit-scrollbar-track {
@@ -1866,7 +1889,6 @@ button {
 
 .code-edit .cm-scroller::-webkit-scrollbar-thumb,
 .phone-stage::-webkit-scrollbar-thumb,
-.article-scroll::-webkit-scrollbar-thumb,
 .theme-dropdown::-webkit-scrollbar-thumb,
 .tree-body::-webkit-scrollbar-thumb,
 .outline-drawer::-webkit-scrollbar-thumb {
@@ -1880,7 +1902,6 @@ button {
 
 .code-edit .cm-scroller:hover::-webkit-scrollbar-thumb,
 .phone-stage:hover::-webkit-scrollbar-thumb,
-.article-scroll:hover::-webkit-scrollbar-thumb,
 .theme-dropdown:hover::-webkit-scrollbar-thumb,
 .tree-body:hover::-webkit-scrollbar-thumb,
 .outline-drawer:hover::-webkit-scrollbar-thumb {
@@ -1890,7 +1911,6 @@ button {
 
 .code-edit .cm-scroller::-webkit-scrollbar-thumb:hover,
 .phone-stage::-webkit-scrollbar-thumb:hover,
-.article-scroll::-webkit-scrollbar-thumb:hover,
 .theme-dropdown::-webkit-scrollbar-thumb:hover,
 .tree-body::-webkit-scrollbar-thumb:hover,
 .outline-drawer::-webkit-scrollbar-thumb:hover {
@@ -1900,8 +1920,7 @@ button {
 
 /* 两条滚动条交汇的直角块，默认会是一小片灰色 */
 .code-edit .cm-scroller::-webkit-scrollbar-corner,
-.phone-stage::-webkit-scrollbar-corner,
-.article-scroll::-webkit-scrollbar-corner {
+.phone-stage::-webkit-scrollbar-corner {
   background: transparent;
 }
 
