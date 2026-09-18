@@ -339,12 +339,18 @@ const EditorPane = forwardRef<HTMLElement, Props>(function EditorPane(
     });
   }, [locked, readonlyComp]);
 
-  // 图片表变了要重画 ![[name]]：装饰缓存在插件里，靠 effect 触发重算
+  /**
+   * 图片表变了要重画 ![[name]]：装饰缓存在插件里，靠 effect 触发重算。
+   * 依赖里必须带 live —— 图片表存在 imagesField 里，而它挂在 live 的 Compartment 中：
+   * 切到「对照」时整套扩展被卸载（图片表随之清空），切回编辑时 Compartment 重新装载，
+   * 图片表是空的；若只依赖 images（没变化），![[name]] 就会退化成原始文本。
+   * 这个 effect 声明在 reconfigure 之后，所以重装后正好补上一次数据。
+   */
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;
     view.dispatch({ effects: setLiveImages.of(images) });
-  }, [images]);
+  }, [images, live]);
 
   // 内容同步：草稿切换（draftId 变化）或外部 value 变化（导入/清理）时，
   // 若 doc 与 value 不同则全量替换并尽量保持光标。
