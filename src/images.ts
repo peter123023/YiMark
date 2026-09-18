@@ -2,7 +2,24 @@
  * 图片工具：把本地图片文件缩放到指定尺寸内并转为 data URL，
  * 内嵌进 markdown 实现本地预览。
  */
+/** 动图（GIF / APNG / 动画 WebP）不能走 canvas：drawImage 只取第一帧，动效会丢 */
+function isAnimated(file: File): boolean {
+  return file.type === 'image/gif' || file.type === 'image/apng' || file.type === 'image/webp';
+}
+
+/** 原样读成 data URL（不做任何重编码，保住动画帧） */
+function readAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error ?? new Error('图片读取失败'));
+    reader.readAsDataURL(file);
+  });
+}
+
 export function downscaleImage(file: File, maxDim = 1280, quality = 0.82): Promise<string> {
+  // 动图必须原样保留字节：canvas 画出来只剩第一帧，再编码成 JPEG 动画就没了
+  if (isAnimated(file)) return readAsDataUrl(file);
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file);
     const img = new Image();
