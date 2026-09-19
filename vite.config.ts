@@ -1,5 +1,82 @@
 import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
+import type { IncomingMessage, ServerResponse } from 'node:http';
+
+/** dev 分享 stub 的存储条目（与生产 server/yimark_share.py 的 JSON 结构一致） */
+interface ShareItem {
+  title: string;
+  markdown: string;
+  themeId: string;
+  densityId: string;
+  images: Record<string, string>;
+  createdAt: number;
+}
+
+const json = (res: ServerResponse, code: number, data: unknown) => {
+  res.statusCode = code;
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.end(JSON.stringify(data));
+};
+
+const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+const randomId = () =>
+  Array.from({ length: 10 }, () => ALPHABET[Math.floor(Math.random() * ALPHABET.length)]).join('');
+
+/**
+ * 文章分享 stub（仅开发环境）。生产环境由 nginx 把 /yimark/api/share、
+ * /yimark/api/read/<id> 反代到本机 share 服务（server/yimark_share.py）。
+ * dev 用内存 Map：重启即失，只用于联调分享弹窗与阅读页。
+ */
+function shareStubPlugin(): Plugin {
+  return {
+    name: 'share-stub',
+    configureServer(server) {
+      const store = new Map<string, ShareItem>();
+      server.middlewares.use('/yimark/api/share', (req: IncomingMessage, res: ServerResponse) => {
+        if (req.method !== 'POST') return json(res, 405, { error: 'method not allowed' });
+        const chunks: Buffer[] = [];
+        let size = 0;
+        let overflow = false;
+        req.on('data', (c: Buffer) => {
+          size += c.length;
+          if (size > 6 * 1024 * 1024) {
+            overflow = true;
+            req.destroy();
+            return;
+          }
+          chunks.push(c);
+        });
+        req.on('end', () => {
+          if (overflow) return json(res, 413, { error: 'too large' });
+          try {
+            const data = JSON.parse(Buffer.concat(chunks).toString('utf8')) as Partial<ShareItem>;
+            if (typeof data.markdown !== 'string' || !data.markdown.trim()) {
+              return json(res, 400, { error: 'empty markdown' });
+            }
+            const id = randomId();
+            store.set(id, {
+              title: String(data.title ?? '').slice(0, 120),
+              markdown: data.markdown,
+              themeId: String(data.themeId ?? 'classic'),
+              densityId: String(data.densityId ?? 'standard'),
+              images: data.images && typeof data.images === 'object' ? data.images : {},
+              createdAt: Date.now(),
+            });
+            json(res, 200, { id });
+          } catch {
+            json(res, 400, { error: 'bad json' });
+          }
+        });
+      });
+      server.middlewares.use('/yimark/api/read/', (req: IncomingMessage, res: ServerResponse) => {
+        const id = (req.url ?? '').replace(/^\/([A-Za-z0-9]+).*$/, '$1');
+        const hit = store.get(id);
+        if (!hit) return json(res, 404, { error: 'not found' });
+        json(res, 200, { id, ...hit });
+      });
+    },
+  };
+}
 
 /**
  * 公众号文章抓取代理（仅开发环境）。生产环境由 nginx 反代同一个路径
@@ -94,7 +171,7 @@ function vendorChunk(id: string): string | undefined {
 }
 
 export default defineConfig({
-  plugins: [react(), wechatProxyPlugin()],
+  plugins: [react(), wechatProxyPlugin(), shareStubPlugin()],
   base: './',
   build: {
     // 语法高亮与编辑器语法包都已按需加载，剩下的主包应远低于该阈值

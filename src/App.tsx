@@ -4,7 +4,10 @@ import FileTree from './components/FileTree';
 import PreviewPane from './components/PreviewPane';
 import Toolbar from './components/Toolbar';
 import WechatImportDialog from './components/WechatImportDialog';
+import ReadView from './components/ReadView';
+import ShareDialog from './components/ShareDialog';
 import { importWechatArticle } from './wechatImport';
+import { createShareLink } from './share';
 import {
   collectImageRefs,
   ensureHighlighter,
@@ -113,6 +116,12 @@ function findEmbedLine(content: string, name: string): number {
   return -1;
 }
 
+/** 解析 hash 路由：#/read/<id> → 分享阅读页；其余返回 null 走编辑器 */
+function parseReadHash(): string | null {
+  const m = window.location.hash.match(/^#\/read\/([A-Za-z0-9]+)/);
+  return m ? m[1] : null;
+}
+
 /** 启动初始化：草稿列表（必要时迁移旧数据）与选中项一次算完，localStorage 只解析一次 */
 function initDraftState(): { drafts: Draft[]; activeId: string } {
   const existing = loadDrafts();
@@ -153,6 +162,15 @@ export default function App() {
   const [exporting, setExporting] = useState(false);
   /** 从公众号文章导入弹窗 */
   const [wechatOpen, setWechatOpen] = useState(false);
+  /** 分享弹窗（打开即上传当前草稿生成链接） */
+  const [shareOpen, setShareOpen] = useState(false);
+  /** 分享阅读路由：#/read/<id> 时全屏渲染 ReadView（编辑器不挂载） */
+  const [readId, setReadId] = useState<string | null>(() => parseReadHash());
+  useEffect(() => {
+    const onHash = () => setReadId(parseReadHash());
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, []);
   /** 对照 / 预览模式 */
   /** 编辑 = 渲染后直接改（Live Preview）；对照 = 源码 + 预览并排；预览 = 只看成品 */
   const [viewMode, setViewMode] = useState<'edit' | 'split' | 'preview'>(() => {
@@ -486,6 +504,30 @@ export default function App() {
     flash(`已导入「${name}」`);
   };
 
+  /** 分享入口：空草稿不开弹窗；上传逻辑在弹窗挂载后执行 */
+  const handleShareClick = () => {
+    if (!markdown.trim()) {
+      flash('当前草稿是空的，先写点内容');
+      return;
+    }
+    setShareOpen(true);
+  };
+
+  /** 创建分享：附上正文引用到的本地图（公众号外链图不带），按当前排版主题渲染给读者 */
+  const handleShare = async (): Promise<string> => {
+    const used = collectImageRefs(markdown);
+    const shareImages = Object.fromEntries(Object.entries(images).filter(([n]) => used.has(n)));
+    const link = await createShareLink({
+      title: activeDraft?.name ?? '未命名文章',
+      markdown,
+      themeId,
+      densityId,
+      images: shareImages,
+    });
+    flash('分享链接已生成');
+    return link;
+  };
+
   /** 导出当前草稿为 .md */
   const handleExportMarkdown = () => {
     if (!activeDraft) return;
@@ -601,6 +643,9 @@ export default function App() {
   const isPreviewOnly = viewMode === 'preview';
   const isLive = viewMode === 'edit';
 
+  // 分享阅读页：全屏替换编辑器（所有 hook 已在上方执行，这里才能安全提前返回）
+  if (readId) return <ReadView id={readId} />;
+
   return (
     <div className="app">
       <Toolbar
@@ -616,6 +661,7 @@ export default function App() {
         onDensityChange={setDensityId}
         onImport={(files) => void handleImport(files)}
         onWechatImport={() => setWechatOpen(true)}
+        onShare={handleShareClick}
         onExportMarkdown={handleExportMarkdown}
         onExportBackup={() => void handleExportBackup()}
         onExportImage={() => void handleExportImage()}
@@ -674,6 +720,7 @@ export default function App() {
         </div>
       </main>
       <WechatImportDialog open={wechatOpen} onClose={() => setWechatOpen(false)} onImport={handleWechatImport} />
+      <ShareDialog open={shareOpen} onClose={() => setShareOpen(false)} onShare={handleShare} />
     </div>
   );
 }

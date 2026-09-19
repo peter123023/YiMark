@@ -8,6 +8,7 @@ import {
   ImageSquare,
   LinkSimple,
   Palette,
+  PaperPlaneTilt,
   UploadSimple,
 } from '@phosphor-icons/react';
 import AccentMenu from './AccentMenu';
@@ -32,6 +33,8 @@ interface Props {
   onImport: (files: File[]) => void;
   /** 打开"从公众号文章导入"弹窗 */
   onWechatImport: () => void;
+  /** 打开"分享文章"弹窗（生成公开阅读链接） */
+  onShare: () => void;
   /** 导出当前草稿为 .md */
   onExportMarkdown: () => void;
   /** 导出全部草稿 + 图片为 zip 备份 */
@@ -74,6 +77,7 @@ export default function Toolbar({
   onDensityChange,
   onImport,
   onWechatImport,
+  onShare,
   onExportMarkdown,
   onExportBackup,
   onExportImage,
@@ -219,6 +223,10 @@ export default function Toolbar({
         <button className="btn" onClick={onWechatImport} title="从公众号文章导入：粘贴 mp.weixin.qq.com 链接">
           <LinkSimple size={15} weight="bold" />
           公众号
+        </button>
+        <button className="btn" onClick={onShare} title="生成公开阅读链接，任何人可读">
+          <PaperPlaneTilt size={15} weight="bold" />
+          分享
         </button>
 
         <div className="menu-wrap" ref={menuRef}>

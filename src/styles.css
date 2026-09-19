@@ -2566,3 +2566,125 @@ html[data-accent-mode='dark'] {
   font-weight: 600;
   box-shadow: var(--shadow-sm);
 }
+
+/* ---------------- 文章分享（弹窗补充 + 公开阅读页） ---------------- */
+
+/* 弹窗里链接行：只读输入框 + 复制按钮 */
+.share-hint {
+  font-size: 12.5px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.share-link-row {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.share-link-input {
+  flex: 1;
+  min-width: 0;
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 11.5px;
+  color: var(--ink);
+}
+
+.share-copy-btn {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* 阅读页：居中纸卡，手机上也是主阅读场景，必须响应式 */
+.read-page {
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 48px 16px 72px;
+  background: var(--bg);
+}
+
+.read-card {
+  width: 100%;
+  max-width: 720px;
+  background: var(--panel-solid);
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  box-shadow: var(--shadow-lg);
+  padding: 40px clamp(20px, 5vw, 56px) 30px;
+  box-sizing: border-box;
+}
+
+.read-title {
+  margin: 0 0 10px;
+  font-size: 24px;
+  line-height: 1.4;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.read-meta {
+  font-size: 12.5px;
+  color: var(--faint);
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border-strong);
+  margin-bottom: 26px;
+}
+
+/* 正文是全内联样式的 HTML（与公众号粘贴同一份），
+   只修首元素顶距与图片自适应，其余完全交给内联样式 */
+.read-body > :first-child {
+  margin-top: 0 !important;
+}
+
+.read-body img {
+  max-width: 100%;
+  height: auto;
+}
+
+.read-footer {
+  margin-top: 42px;
+  padding-top: 16px;
+  border-top: 1px dashed var(--border-strong);
+  text-align: center;
+  font-size: 12px;
+  color: var(--faint);
+}
+
+.read-footer a {
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+/* 加载 / 错误状态 */
+.read-state {
+  margin: 22vh auto 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 13.5px;
+}
+
+.read-state p {
+  margin: 0;
+}
+
+@media (max-width: 600px) {
+  .read-page {
+    padding: 16px 10px 40px;
+  }
+
+  .read-card {
+    padding: 26px 18px 22px;
+    border-radius: 12px;
+  }
+
+  .read-title {
+    font-size: 20px;
+  }
+}

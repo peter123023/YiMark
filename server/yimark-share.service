@@ -1,0 +1,15 @@
+[Unit]
+Description=yimark share server (easy-article sharing)
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/python3 /opt/yimark-share/yimark_share.py
+Environment=YIMARK_SHARE_DIR=/var/lib/yimark-share
+Restart=always
+RestartSec=3
+# 只监听 127.0.0.1，公网入口由 nginx 反代
+User=root
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
