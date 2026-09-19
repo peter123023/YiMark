@@ -231,6 +231,59 @@ export const classicTheme: Theme = {
   codePaletteMode: 'light',
 };
 
+/** 浅蓝经典：完整拷贝经典版式，仅把陶土橙主色换为浅蓝 */
+export const skyblueTheme: Theme = {
+  id: 'skyblue',
+  name: '浅蓝经典',
+  description: '经典版式 + 浅蓝强调，清爽干净',
+  appearance: 'light',
+  mono: MONO,
+  body: { font: SANS, fontSize: '16px', lineHeight: '1.75', color: '#2b2b2b' },
+  accent: '#4a90d9',
+  heading: {
+    font: SERIF,
+    fontWeight: '700',
+    color: '#1a1a1a',
+    lineHeight: '1.4',
+    letterSpacing: '0.5px',
+    marginTop: '28px',
+    marginBottom: '12px',
+    decor: 'none',
+  },
+  headingSizes: { h1: '28px', h2: '24px', h3: '21px', h4: '19px', h5: '17px', h6: '16px' },
+  pMargin: '16px',
+  quote: {
+    background: '#faf6f2',
+    color: '#4a4a45',
+    borderLeft: '4px solid #4a90d9',
+    borderRadius: '0 6px 6px 0',
+    padding: '12px 16px',
+    margin: '20px 0',
+  },
+  callout: {
+    background: '#f2efe8',
+    color: '#4a4a45',
+    borderLeft: '4px solid #4a90d9',
+    borderRadius: '0 10px 10px 0',
+    padding: '14px 16px',
+    margin: '20px 0',
+  },
+  code: { background: '#f4f1ec', color: '#26231e', borderRadius: '4px', padding: '2px 5px', fontSize: '0.9em' },
+  codeBlock: { background: '#f7f5f0', color: '#2b2823', borderRadius: '6px', padding: '14px 16px', fontSize: '14px', lineHeight: '1.6' },
+  link: { color: '#4a90d9', textDecoration: 'underline' },
+  listPaddingLeft: '26px',
+  listItemMargin: '6px 0',
+  table: { borderColor: '#e5e3dc', headBg: '#f4f1ec', headColor: '#26231e', fontSize: '15px', cellPadding: '8px 12px' },
+  hr: { color: '#e5e3dc', margin: '28px 0' },
+  img: { borderRadius: '8px', margin: '16px auto' },
+  strongColor: 'inherit',
+  delColor: '#a6a29a',
+  mark: { background: '#fff3c4', color: '#4a3a10', borderRadius: '3px', padding: '1px 4px' },
+  footnote: { refColor: '#4a90d9', blockBorder: '#e5e3dc', textColor: '#8a867e', numColor: '#4a90d9', textSize: '12px' },
+  codePalette: PALETTE_LIGHT,
+  codePaletteMode: 'light',
+};
+
 /** 杂志编辑：绯红强调 + 重磅衬线大标题 + 报刊引语，纸媒编辑部气质 */
 export const editorialTheme: Theme = {
   id: 'editorial',
@@ -877,6 +930,7 @@ export const themes: Theme[] = [
   sakuraTheme,
   typewriterTheme,
   indigoTheme,
+  skyblueTheme,
   darkTheme,
   midnightTheme,
   graphiteTheme,
