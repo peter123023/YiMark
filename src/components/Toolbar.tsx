@@ -6,6 +6,7 @@ import {
   DownloadSimple,
   FileMd,
   ImageSquare,
+  LinkSimple,
   Palette,
   UploadSimple,
 } from '@phosphor-icons/react';
@@ -29,6 +30,8 @@ interface Props {
   onDensityChange: (id: string) => void;
   /** 导入 .md / .zip 备份 */
   onImport: (files: File[]) => void;
+  /** 打开"从公众号文章导入"弹窗 */
+  onWechatImport: () => void;
   /** 导出当前草稿为 .md */
   onExportMarkdown: () => void;
   /** 导出全部草稿 + 图片为 zip 备份 */
@@ -70,6 +73,7 @@ export default function Toolbar({
   densityId,
   onDensityChange,
   onImport,
+  onWechatImport,
   onExportMarkdown,
   onExportBackup,
   onExportImage,
@@ -211,6 +215,10 @@ export default function Toolbar({
         <button className="btn" onClick={() => fileRef.current?.click()} title="导入 Markdown 文件或备份包">
           <UploadSimple size={15} weight="bold" />
           导入
+        </button>
+        <button className="btn" onClick={onWechatImport} title="从公众号文章导入：粘贴 mp.weixin.qq.com 链接">
+          <LinkSimple size={15} weight="bold" />
+          公众号
         </button>
 
         <div className="menu-wrap" ref={menuRef}>

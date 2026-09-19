@@ -760,7 +760,9 @@ function renderImg(src: string, alt: string, title: string | null, th: Theme, in
   const style = inline
     ? st({ 'max-width': '100%', 'border-radius': th.img.borderRadius, display: 'inline-block', 'vertical-align': 'middle' })
     : st({ 'max-width': '100%', 'border-radius': th.img.borderRadius, display: 'block', margin: th.img.margin });
-  return `<img src="${esc(src)}" alt="${esc(alt)}"${title ? ` title="${esc(title)}"` : ''} style="${style}" />`;
+  // 外链图（微信 mmbiz 等图床校验 Referer 防盗链）不带 referrer 才能加载
+  const refPolicy = /^https?:\/\//i.test(src) ? ' referrerpolicy="no-referrer"' : '';
+  return `<img src="${esc(src)}" alt="${esc(alt)}"${title ? ` title="${esc(title)}"` : ''}${refPolicy} style="${style}" />`;
 }
 
 /** 同一个 inline 容器里除了图片还有别的可见内容 ⇒ 这张图是夹在文字中间的 */

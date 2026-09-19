@@ -3,6 +3,8 @@ import EditorPane from './components/EditorPane';
 import FileTree from './components/FileTree';
 import PreviewPane from './components/PreviewPane';
 import Toolbar from './components/Toolbar';
+import WechatImportDialog from './components/WechatImportDialog';
+import { importWechatArticle } from './wechatImport';
 import {
   collectImageRefs,
   ensureHighlighter,
@@ -149,6 +151,8 @@ export default function App() {
   const [status, setStatus] = useState<string | null>(null);
   /** 导出进行中（长图 / 备份包都要跑一会儿） */
   const [exporting, setExporting] = useState(false);
+  /** 从公众号文章导入弹窗 */
+  const [wechatOpen, setWechatOpen] = useState(false);
   /** 对照 / 预览模式 */
   /** 编辑 = 渲染后直接改（Live Preview）；对照 = 源码 + 预览并排；预览 = 只看成品 */
   const [viewMode, setViewMode] = useState<'edit' | 'split' | 'preview'>(() => {
@@ -472,6 +476,16 @@ export default function App() {
     }
   };
 
+  /** 从公众号文章导入：抓取转 Markdown 后新建草稿并跳过去（错误抛给弹窗展示） */
+  const handleWechatImport = async (url: string) => {
+    const article = await importWechatArticle(url);
+    const id = `draft-${Date.now()}`;
+    const name = article.title.slice(0, 40);
+    setDrafts((prev) => [...prev, { id, name, content: article.markdown, updatedAt: Date.now() }]);
+    setActiveDraft(id);
+    flash(`已导入「${name}」`);
+  };
+
   /** 导出当前草稿为 .md */
   const handleExportMarkdown = () => {
     if (!activeDraft) return;
@@ -601,6 +615,7 @@ export default function App() {
         densityId={densityId}
         onDensityChange={setDensityId}
         onImport={(files) => void handleImport(files)}
+        onWechatImport={() => setWechatOpen(true)}
         onExportMarkdown={handleExportMarkdown}
         onExportBackup={() => void handleExportBackup()}
         onExportImage={() => void handleExportImage()}
@@ -658,6 +673,7 @@ export default function App() {
           />
         </div>
       </main>
+      <WechatImportDialog open={wechatOpen} onClose={() => setWechatOpen(false)} onImport={handleWechatImport} />
     </div>
   );
 }

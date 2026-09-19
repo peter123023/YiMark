@@ -1,5 +1,47 @@
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
+
+/**
+ * 公众号文章抓取代理（仅开发环境）。生产环境由 nginx 反代同一个路径
+ * /yimark/api/fetch 实现，两侧约定一致：只放行 mp.weixin.qq.com，
+ * 其余一律 403，避免开放代理被滥用。
+ */
+function wechatProxyPlugin(): Plugin {
+  return {
+    name: 'wechat-article-proxy',
+    configureServer(server) {
+      server.middlewares.use('/yimark/api/fetch', (req, res) => {
+        const reply = (code: number, msg: string) => {
+          res.statusCode = code;
+          res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+          res.end(msg);
+        };
+        const target = new URL(req.url ?? '/', 'http://x').searchParams.get('url') ?? '';
+        try {
+          const u = new URL(target);
+          if (u.hostname !== 'mp.weixin.qq.com' || u.protocol !== 'https:') return reply(403, 'only https://mp.weixin.qq.com allowed');
+          void fetch(u, {
+            headers: {
+              // 微信对无浏览器 UA 的请求会直接返回环境异常页
+              'User-Agent':
+                'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+              Referer: 'https://mp.weixin.qq.com/',
+              'Accept-Language': 'zh-CN,zh;q=0.9',
+            },
+          })
+            .then(async (up) => {
+              res.statusCode = up.status;
+              res.setHeader('Content-Type', up.headers.get('content-type') ?? 'text/html; charset=utf-8');
+              res.end(Buffer.from(await up.arrayBuffer()));
+            })
+            .catch(() => reply(502, 'upstream fetch failed'));
+        } catch {
+          reply(400, 'bad url');
+        }
+      });
+    },
+  };
+}
 
 /**
  * 首屏必需、且几乎不变的依赖 —— 单独成块，换版本才失效，日常发版能一直命中缓存。
@@ -51,7 +93,7 @@ function vendorChunk(id: string): string | undefined {
 }
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), wechatProxyPlugin()],
   base: './',
   build: {
     // 语法高亮与编辑器语法包都已按需加载，剩下的主包应远低于该阈值
