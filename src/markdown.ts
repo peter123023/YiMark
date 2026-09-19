@@ -64,13 +64,17 @@ interface Env {
   images?: Record<string, string>;
   /** 渲染时标记当前是否处于脚注条目内（用于跳过插件的段落包裹） */
   footnote?: boolean;
+  /** 渲染时标记当前是否处于表格内（用于把单元格里的 <br> 还原成真换行，见 text 规则） */
+  inTable?: boolean;
 }
 
 type RenderRule = (tokens: Token[], idx: number, options: unknown, env: Env) => string;
 
 const md = new MarkdownIt({
   html: true,
-  breaks: false,
+  // 单换行也断行：粘贴多行文本 / 手动回车都按用户预期成行，
+  // 不必再靠「空行分段」或行尾反斜杠。表格单元格另走 <br> 还原规则（见 text）。
+  breaks: true,
   linkify: false,
   typographer: false,
 });
@@ -547,6 +551,8 @@ md.renderer.rules.hr = ((_t, _i, _o, env) =>
 
 md.renderer.rules.table_open = ((_t, _i, _o, env) => {
   const b = env.theme.body;
+  // 标记进入表格：单元格内容在 text 规则里要把 <br> 还原成真换行
+  env.inTable = true;
   return `<table style="${st({
     'font-family': b.font,
     'font-size': env.theme.table.fontSize,
@@ -556,6 +562,27 @@ md.renderer.rules.table_open = ((_t, _i, _o, env) => {
     width: '100%',
     margin: `0 0 ${env.theme.pMargin}`,
   })}">`;
+}) as RenderRule;
+
+md.renderer.rules.table_close = ((_t, _i, _o, env) => {
+  env.inTable = false;
+  return '</table>';
+}) as RenderRule;
+
+/**
+ * 单元格里的 `<br>` 还原成真换行。
+ *
+ * MarkdownIt 的表格单元格内容以纯文本模式解析，html 规则不参与，
+ * 所以源码里的 `<br>` 会被 escapeHtml 成 `&lt;br&gt;` 原样显示 ——
+ * 用户粘贴的多行文本落到预览就挤成一坨。这里只在表格内把转义形态
+ * 换回标签；表格外的 `<br>` 保持原样，免得正文里手写的 <br> 意外生变。
+ *
+ * 只在 table 上下文中生效，所以不会影响正文换行语义（正文靠段落/软换行）。
+ */
+md.renderer.rules.text = ((tokens, idx, _o, env) => {
+  const content = tokens[idx].content;
+  if (!env.inTable) return esc(content);
+  return esc(content).replace(/&lt;br\s*\/?&gt;/gi, '<br>');
 }) as RenderRule;
 
 md.renderer.rules.thead_open = (() => '<thead>') as RenderRule;

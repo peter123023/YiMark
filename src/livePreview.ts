@@ -182,6 +182,51 @@ class CodeLabelWidget extends WidgetType {
 }
 
 /**
+ * 单元格内换行在源码里的写法。
+ *
+ * Markdown 表格一行就是一行，真换行会把表格拆散，所以单元格里只能用 `<br>`
+ * 表达分行；markdown.ts 开了 html:true，渲染时会把它当标签换行。
+ * 抽成常量是因为读写两侧都要用，改一处必须同时生效。
+ */
+const CELL_BR = '<br>';
+
+/**
+ * 把单元格源码文本填进 DOM：`<br>` 渲染成真实换行，其余字符按纯文本处理。
+ *
+ * 不用 innerHTML 整体赋值 —— 单元格里的 `<` `&` 这类字符是用户正文，
+ * 直接塞会被当 HTML 解析。这里只把 <br> 拆出来当换行，别的都走 textContent。
+ */
+function setCellContent(cell: HTMLElement, text: string) {
+  cell.textContent = '';
+  const parts = text.split(CELL_BR);
+  parts.forEach((seg, i) => {
+    if (i > 0) cell.appendChild(document.createElement('br'));
+    if (seg) cell.appendChild(document.createTextNode(seg));
+  });
+}
+
+/**
+ * 单元格 DOM → 源码文本。
+ *
+ * 单元格是 plaintext-only，内部换行以 \n 形式存在（execCommand insertHTML
+ * 在这里也会被降级成纯文本，产不出 <br> 标签）。读的时候必须走 innerText —— 
+ * innerHTML 里 \n 只是普通空白，会被折叠掉，用户的换行就丢了。
+ *
+ * 拿到 \n 后转成 <br> 字面量写进源码：这样表格结构不破，预览里保留分行。
+ * 半角 | 是列分隔符，换全角，否则表格会多出一列。
+ */
+function cellTextFrom(el: HTMLElement | null): string {
+  if (!el) return '';
+  // innerText 会按渲染结果给换行（<br> 与块级边界都算），正好是我们要的分行语义
+  const text = el.innerText ?? '';
+  return text
+    .replace(/\r\n?/g, '\n')
+    .replace(/\n/g, CELL_BR)
+    .replace(/\|/g, '｜')
+    .trim();
+}
+
+/**
  * GFM 表格：整块渲染成真表格，单元格直接可编辑（contentEditable）。
  * 编辑产生的文本通过 tableSync 事务写回文档；tableField 对这类事务只映射
  * 位置、复用同一 widget 实例（不换 DOM），光标和输入法组合状态才不会丢。
@@ -227,7 +272,7 @@ class TableWidget extends WidgetType {
       const tr = table.createTHead().insertRow();
       for (const c of head) {
         const th = document.createElement('th');
-        th.textContent = c;
+        setCellContent(th, c);
         tr.appendChild(th);
       }
     }
@@ -236,7 +281,7 @@ class TableWidget extends WidgetType {
       const tr = tbody.insertRow();
       for (const c of r) {
         const td = tr.insertCell();
-        td.textContent = c;
+        setCellContent(td, c);
       }
     }
     el.appendChild(table);
@@ -274,10 +319,20 @@ class TableWidget extends WidgetType {
     }
   }
 
+  /**
+   * 单元格粘入纯文本。
+   *
+   * 以前把换行一律替换成空格：从网页/文档复制的多行文字被压成一坨，读不了。
+   * 现在把 \n 原样插进单元格（plaintext-only 下会真实分行显示），
+   * sync() 落回源码时再转成 <br> —— 表格结构不破，预览里也保留分行。
+   *
+   * 不用 insertHTML：plaintext-only 单元格会把它降级成纯文本，捏不出 <br> 标签。
+   * 半角 | 是列分隔符，仍必须换全角，否则表格会多出一列。
+   */
   private onPaste(e: ClipboardEvent) {
     e.preventDefault();
     const text = e.clipboardData?.getData('text/plain') ?? '';
-    document.execCommand('insertText', false, text.replace(/[\r\n|]+/g, ' ').trim());
+    document.execCommand('insertText', false, text.replace(/\|/g, '｜').replace(/\r\n?/g, '\n').trim());
   }
 
   private focusNextCell(dir: 1 | -1) {
@@ -300,17 +355,17 @@ class TableWidget extends WidgetType {
   private sync() {
     const view = liveEditorView;
     if (!view || !this.el || this.posTo <= this.posFrom) return;
-    if (!view || !this.el || this.posTo <= this.posFrom) return;
     const table = this.el.querySelector('table');
     if (!table) return;
-    const clean = (s: string | null) =>
-      (s ?? '').replace(/\|/g, '｜').replace(/[\r\n]+/g, ' ').trim();
+    // 单元格内的换行在源码里写成 <br>（粘贴时转的），这里把它读回来，
+    // 不能压成空格 —— 否则用户粘贴的多行文字一编辑就被重新拍平
+    const clean = (el: HTMLElement | null) => cellTextFrom(el);
     const rowEls = [...table.querySelectorAll('tr')];
     if (!rowEls.length) return;
     const lines = [
-      `| ${[...(rowEls[0].children ?? [])].map((c) => clean(c.textContent)).join(' | ')} |`,
+      `| ${[...(rowEls[0].children ?? [])].map((c) => clean(c as HTMLElement)).join(' | ')} |`,
       this.sepLine,
-      ...rowEls.slice(1).map((tr) => `| ${[...tr.children].map((c) => clean(c.textContent)).join(' | ')} |`),
+      ...rowEls.slice(1).map((tr) => `| ${[...tr.children].map((c) => clean(c as HTMLElement)).join(' | ')} |`),
     ];
     const md = lines.join('\n');
     if (md === this.src) return;
