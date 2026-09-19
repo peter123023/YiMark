@@ -16,7 +16,8 @@ function wechatProxyPlugin(): Plugin {
           res.setHeader('Content-Type', 'text/plain; charset=utf-8');
           res.end(msg);
         };
-        const target = new URL(req.url ?? '/', 'http://x').searchParams.get('url') ?? '';
+        // 目标地址在 X-Target-Url 请求头（与生产 nginx 反代约定一致）
+        const target = String(req.headers['x-target-url'] ?? '');
         try {
           const u = new URL(target);
           if (u.hostname !== 'mp.weixin.qq.com' || u.protocol !== 'https:') return reply(403, 'only https://mp.weixin.qq.com allowed');
