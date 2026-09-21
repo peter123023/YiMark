@@ -29,6 +29,11 @@ pnpm-debug.log*
 .playwright-cli/
 .codebuddy/
 modesnap.yml
+# Playwright 无障碍快照：调试时随手导出的产物，不随仓库分发
+dlg.yaml
+imp.yaml
+s0.yaml
+snap.yaml
 
 # AI 协作约定：含服务器地址等本地信息，不随仓库分发
 AGENTS.md
