@@ -234,7 +234,7 @@ function pickTitle(doc: Document, fallbackHost: string): string {
 export async function importWebArticle(rawUrl: string): Promise<ImportedArticle> {
   const matched = matchSite(rawUrl);
   if (!matched) {
-    throw new Error('请输入受支持的链接（公众号 / 掘金 / 少数派 / 知乎 / 小红书 等）');
+    throw new Error('请输入受支持的链接（公众号 / 少数派 / 简书 等）');
   }
   const { url, rule } = matched;
   const target = normalize(url);

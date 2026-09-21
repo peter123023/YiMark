@@ -120,13 +120,13 @@ export default function FileTree({
       <div className="tree-head">
         {!collapsed && <span className="tree-head-label">文件</span>}
         {!collapsed && (
-          <button className="tree-new" title="新建草稿" aria-label="新建草稿" onClick={onNew}>
+          <button className="tree-new" data-tip="新建草稿" aria-label="新建草稿" onClick={onNew}>
             <FilePlus size={14} />
           </button>
         )}
         <button
           className="tree-collapse"
-          title={collapsed ? '展开文件面板' : '收起文件面板'}
+          data-tip={collapsed ? '展开文件面板' : '收起文件面板'}
           aria-label={collapsed ? '展开文件面板' : '收起文件面板'}
           aria-expanded={!collapsed}
           onClick={onToggleCollapsed}
@@ -134,6 +134,28 @@ export default function FileTree({
           {collapsed ? <SidebarSimple size={15} /> : <CaretDoubleLeft size={15} />}
         </button>
       </div>
+
+      {/* 收起态：窄栏里直接列出每篇草稿的图标，点击切换，鼠标悬停看标题 */}
+      {collapsed && (
+        <div className="tree-rail" role="tree" aria-label="文件">
+          {drafts.map((d) => {
+            const active = d.id === activeId;
+            return (
+              <button
+                key={d.id}
+                className={`tree-rail-item ${active ? 'active' : ''}`}
+                data-tip={d.name}
+                aria-label={d.name}
+                aria-selected={active}
+                role="treeitem"
+                onClick={() => onSelect(d.id)}
+              >
+                <FileMd size={16} />
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {!collapsed && (
       <div className="tree-body" role="tree" aria-label="文件">

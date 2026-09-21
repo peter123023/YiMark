@@ -72,7 +72,7 @@ export default function WechatImportDialog({ open, onClose, onImport }: Props) {
         <input
           ref={inputRef}
           className="wechat-dialog-input"
-          placeholder="粘贴文章链接（公众号 / 掘金 / 知乎 / 少数派…）"
+          placeholder="粘贴文章链接（公众号 / 少数派 / 简书…）"
           value={url}
           disabled={busy}
           spellCheck={false}
