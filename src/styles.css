@@ -515,6 +515,28 @@ button {
   display: none;
 }
 
+/* 窄栏是滚动容器（overflow 非 visible），作为其子树的 ::after 提示
+   必然被裁掉 —— 这是 overflow 的硬约束，换 overlay/auto 都没用。
+   所以收起态的提示改为 fixed 定位，彻底脱离容器的裁剪范围，
+   纵向位置由 JS 悬停时写入的 --tip-y 提供。 */
+.tree-rail-item[data-tip-side='right']::after {
+  position: fixed;
+  top: var(--tip-y, 0);
+  left: 62px;
+  right: auto;
+  transform: translateY(-50%) translateX(-3px);
+}
+
+.tree-rail-item[data-tip-side='right']:hover::after,
+.tree-rail-item[data-tip-side='right']:focus-visible::after {
+  transform: translateY(-50%) translateX(0);
+}
+
+.tree-rail-item:focus-visible::after {
+  position: fixed;
+  top: var(--tip-y, 0);
+}
+
 .tree-rail-item {
   flex: none;
   width: 28px;

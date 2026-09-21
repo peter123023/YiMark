@@ -373,6 +373,12 @@ export default function FileTree({
                 aria-selected={active}
                 role="treeitem"
                 onClick={() => onSelect(d.id)}
+                onMouseEnter={(e) => {
+                  /* 窄栏是滚动容器，提示属于其子树、会被 overflow 裁掉。
+                     改用 fixed 定位脱离裁剪，这里把图标纵向中心写进 CSS 变量 */
+                  const r = e.currentTarget.getBoundingClientRect();
+                  e.currentTarget.style.setProperty('--tip-y', `${r.top + r.height / 2}px`);
+                }}
               >
                 <FileMd size={16} />
               </button>
