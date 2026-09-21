@@ -29,3 +29,6 @@ pnpm-debug.log*
 .playwright-cli/
 .codebuddy/
 modesnap.yml
+
+# AI 协作约定：含服务器地址等本地信息，不随仓库分发
+AGENTS.md
