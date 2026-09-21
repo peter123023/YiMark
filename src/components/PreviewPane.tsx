@@ -7,6 +7,8 @@ import type { Theme } from '../theme';
 interface Props {
   body: string;
   theme: Theme;
+  /** 草稿名（文件树里显示的名字），作为文章标题的第一来源 */
+  name: string;
   /** Whether the body contains images (shows the WeChat paste notice) */
   hasImage: boolean;
   /**
@@ -165,7 +167,7 @@ function buildAnchors(scroll: HTMLElement): Anchor[] {
  * Every style in the body HTML is inline ⇒ preview and export (the WeChat
  * paste) are identical.
  */
-export default function PreviewPane({ body, theme, hasImage, resizeKey, sync }: Props) {
+export default function PreviewPane({ body, theme, name, hasImage, resizeKey, sync }: Props) {
   const paneRef = useRef<HTMLElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -180,7 +182,11 @@ export default function PreviewPane({ body, theme, hasImage, resizeKey, sync }: 
   /** What actually gets drawn */
   const layout = device === 'desktop' ? 'desktop' : 'phone';
   const fit = fitFor(device, stage.w, stage.h);
-  const title = useMemo(() => extractTitle(body), [body]);
+  /**
+   * 文章标题以草稿名为准（与文件树显示一致）；草稿名为空时退回正文首个 h1。
+   * 两者都没有才显示占位符。
+   */
+  const title = useMemo(() => name.trim() || extractTitle(body), [name, body]);
   /** Body used for the preview (duplicate h1 removed; exports still use the full body) */
   const previewBody = useMemo(() => (title ? stripFirstH1(body) : body), [body, title]);
   /** Date in the article head (a new Date() on every render means nothing) */
@@ -418,7 +424,7 @@ export default function PreviewPane({ body, theme, hasImage, resizeKey, sync }: 
             <div className="article-scroll" ref={scrollRef}>
               {/* WeChat article head: title (with a placeholder when empty) plus byline */}
               <div className="article-head">
-                <h1 className="head-title">{title || '未命名文章'}</h1>
+                <h1 className="head-title">{title || '未命名草稿'}</h1>
                 <div className="meta">
                   <span className="author">易码</span>
                   <span className="byline">

@@ -725,6 +725,7 @@ export default function App() {
           <PreviewPane
             body={result.body}
             theme={theme}
+            name={activeDraft?.name ?? ''}
             hasImage={result.hasImage}
             resizeKey={`${viewMode}:${editorPct}`}
             sync={scrollSync}
