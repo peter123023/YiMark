@@ -183,12 +183,14 @@ export default function PreviewPane({ body, theme, name, hasImage, resizeKey, sy
   const layout = device === 'desktop' ? 'desktop' : 'phone';
   const fit = fitFor(device, stage.w, stage.h);
   /**
-   * 文章标题以草稿名为准（与文件树显示一致）；草稿名为空时退回正文首个 h1。
-   * 两者都没有才显示占位符。
+   * 文章标题只看草稿名（与文件树显示一致），忽略正文里的首个 h1；
+   * 草稿名为空才显示占位符。
    */
-  const title = useMemo(() => name.trim() || extractTitle(body), [name, body]);
+  const title = useMemo(() => name.trim(), [name]);
+  /** 正文里的首个 h1 与草稿名重复，预览时丢掉；导出仍用完整正文 */
+  const hasBodyH1 = useMemo(() => Boolean(extractTitle(body)), [body]);
   /** Body used for the preview (duplicate h1 removed; exports still use the full body) */
-  const previewBody = useMemo(() => (title ? stripFirstH1(body) : body), [body, title]);
+  const previewBody = useMemo(() => (hasBodyH1 ? stripFirstH1(body) : body), [body, hasBodyH1]);
   /** Date in the article head (a new Date() on every render means nothing) */
   const today = useMemo(() => new Date(), []);
 
