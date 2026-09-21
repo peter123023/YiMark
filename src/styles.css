@@ -498,13 +498,20 @@ button {
   align-items: center;
   gap: 2px;
   padding: 2px 0 8px;
-  /* 刻意不做滚动容器：一旦 overflow 不是 visible，横向会被强制成 auto，
-     向右弹出的提示就会被裁掉。草稿数量通常在可视范围内；
-     真的很多时，收起态本身也不适合当列表用，展开即可。 */
-  overflow: visible;
+  /* 滚动条不占位，40px 窄栏不会被挤掉图标空间 */
+  scrollbar-width: none;
+  /* 必须做成滚动容器：草稿多时若 overflow:visible，图标会直接顶出面板、
+     盖到编辑器上。用 overlay 而不是 auto —— 一旦某轴非 visible，
+     另一轴会被强制成 auto，把向右弹出的提示裁掉；
+     overlay 的特性正是「不裁内容」，提示可以正常溢出显示。
+     不支持的浏览器退回 auto：仍有滚动，只是提示会被裁。 */
+  overflow-y: overlay;
+  overflow-x: overlay;
 }
 
 .tree-rail::-webkit-scrollbar {
+  /* overlay 下滚动条本来就是悬浮叠加的，这里再彻底隐藏，
+     避免 40px 窄栏被滚动条挤掉图标空间 */
   display: none;
 }
 
