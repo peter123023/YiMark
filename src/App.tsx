@@ -30,6 +30,8 @@ const STORAGE_THEME = 'yimark:theme';
 const STORAGE_DENSITY = 'yimark:density';
 const STORAGE_DRAFTS = 'yimark:drafts';
 const STORAGE_ACTIVE_DRAFT = 'yimark:active-draft';
+/** 左侧文件面板是否收起 */
+const STORAGE_TREE_COLLAPSED = 'yimark:tree-collapsed';
 /** 界面配色（见 accents.ts） */
 const STORAGE_ACCENT = 'yimark:accent';
 /** 工作区模式（edit/split/preview），刷新后要停在用户上次用的那档 */
@@ -153,6 +155,10 @@ export default function App() {
   const [images, setImages] = useState<Record<string, string>>({});
   const [themeId, setThemeId] = useState<string>(() => localStorage.getItem(STORAGE_THEME) ?? 'classic');
   const [densityId, setDensityId] = useState<string>(() => localStorage.getItem(STORAGE_DENSITY) ?? 'standard');
+  /** 文件面板整体收起/展开，窄屏下能明显腾出编辑区 */
+  const [treeCollapsed, setTreeCollapsed] = useState<boolean>(
+    () => localStorage.getItem(STORAGE_TREE_COLLAPSED) === '1',
+  );
   /** 界面配色（外壳强调色），与文章主题是两套东西 */
   const [accentId, setAccentId] = useState<string>(
     () => localStorage.getItem(STORAGE_ACCENT) ?? DEFAULT_ACCENT_ID,
@@ -292,6 +298,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem(STORAGE_DENSITY, densityId);
   }, [densityId]);
+  // 记住文件面板的收起状态
+  useEffect(() => {
+    localStorage.setItem(STORAGE_TREE_COLLAPSED, treeCollapsed ? '1' : '0');
+  }, [treeCollapsed]);
 
   /**
    * 应用界面配色：把强调色与纸面色写成 CSS 变量挂在 <html> 上。
@@ -680,6 +690,8 @@ export default function App() {
           onDeleteImage={handleDeleteImage}
           onCleanupImages={handleCleanupImages}
           onLocateImage={handleLocateImage}
+          collapsed={treeCollapsed}
+          onToggleCollapsed={() => setTreeCollapsed((v) => !v)}
         />
         <div className="split" ref={splitRef}>
           <EditorPane

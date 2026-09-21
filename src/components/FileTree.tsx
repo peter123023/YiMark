@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Broom,
+  CaretDoubleLeft,
   CaretDown,
   CaretRight,
   FileMd,
@@ -8,6 +9,7 @@ import {
   FolderOpen,
   Image,
   PencilSimple,
+  SidebarSimple,
   Trash,
 } from '@phosphor-icons/react';
 
@@ -33,6 +35,9 @@ interface Props {
   onCleanupImages: () => void;
   /** 点击图片：定位到正文里引用它的位置 */
   onLocateImage: (name: string) => void;
+  /** 面板是否收起（收起后缩成一条窄栏，只留展开按钮） */
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
 }
 
 /** 相对时间：列表里比绝对时间戳更好读 */
@@ -79,6 +84,8 @@ export default function FileTree({
   onDeleteImage,
   onCleanupImages,
   onLocateImage,
+  collapsed,
+  onToggleCollapsed,
 }: Props) {
   const [draftsOpen, setDraftsOpen] = useState(true);
   const [imagesOpen, setImagesOpen] = useState(false);
@@ -109,14 +116,26 @@ export default function FileTree({
   };
 
   return (
-    <nav className="file-tree" aria-label="文件">
+    <nav className={`file-tree ${collapsed ? 'collapsed' : ''}`} aria-label="文件">
       <div className="tree-head">
-        <span className="tree-head-label">文件</span>
-        <button className="tree-new" title="新建草稿" aria-label="新建草稿" onClick={onNew}>
-          <FilePlus size={14} />
+        {!collapsed && <span className="tree-head-label">文件</span>}
+        {!collapsed && (
+          <button className="tree-new" title="新建草稿" aria-label="新建草稿" onClick={onNew}>
+            <FilePlus size={14} />
+          </button>
+        )}
+        <button
+          className="tree-collapse"
+          title={collapsed ? '展开文件面板' : '收起文件面板'}
+          aria-label={collapsed ? '展开文件面板' : '收起文件面板'}
+          aria-expanded={!collapsed}
+          onClick={onToggleCollapsed}
+        >
+          {collapsed ? <SidebarSimple size={15} /> : <CaretDoubleLeft size={15} />}
         </button>
       </div>
 
+      {!collapsed && (
       <div className="tree-body" role="tree" aria-label="文件">
         {/* ---- 草稿 ---- */}
         <div className="tree-group" role="treeitem" aria-expanded={draftsOpen}>
@@ -242,6 +261,7 @@ export default function FileTree({
           )}
         </div>
       </div>
+      )}
     </nav>
   );
 }

@@ -459,6 +459,20 @@ button {
   border-color: rgba(var(--tint), 0.14);
 }
 
+/* 收起态：缩成一条窄栏，只保留展开按钮 */
+.file-tree.collapsed {
+  width: 40px;
+  margin-right: 10px;
+}
+
+.file-tree.collapsed .tree-head {
+  padding: 7px 0;
+  justify-content: center;
+  gap: 0;
+  /* 收起后标题栏就是整条面板，边框线显得多余 */
+  border-bottom: none;
+}
+
 .tree-head {
   flex: none;
   display: flex;
@@ -492,6 +506,27 @@ button {
 }
 
 .tree-new:hover {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+/* 折叠/展开按钮：和「新建草稿」同尺寸同配色，保持标题栏节奏一致 */
+.tree-collapse {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 0.14s ease, color 0.14s ease;
+}
+
+.tree-collapse:hover {
   background: var(--accent-soft);
   color: var(--accent-strong);
 }
@@ -2032,6 +2067,12 @@ button {
     width: 100%;
     margin: 0 0 12px;
     max-height: 190px;
+  }
+  /* 窄屏收起：只留一个可点的展开条，不能保留整条 100% 宽的空带 */
+  .file-tree.collapsed {
+    width: 100%;
+    max-height: none;
+    margin: 0 0 8px;
   }
   .split {
     flex-direction: column;
