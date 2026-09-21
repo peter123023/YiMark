@@ -79,13 +79,43 @@ function shareStubPlugin(): Plugin {
 }
 
 /**
- * 公众号文章抓取代理（仅开发环境）。生产环境由 nginx 反代同一个路径
- * /yimark/api/fetch 实现，两侧约定一致：只放行 mp.weixin.qq.com，
- * 其余一律 403，避免开放代理被滥用。
+ * 文章抓取代理允许的域名白名单。
+ *
+ * **必须与 src/webImport.ts 的 SITES 保持一致**（前端负责校验与提示，
+ * 服务端负责真正拦截；前端校验可被绕过，所以这里才是安全边界）。
+ * 生产环境同一份清单在 nginx 的 snippet 里，改这里要同步改那儿。
  */
-function wechatProxyPlugin(): Plugin {
+const ALLOWED_HOSTS = [
+  'mp.weixin.qq.com',
+  'juejin.cn',
+  'sspai.com',
+  'zhihu.com',
+  'www.zhihu.com',
+  'zhuanlan.zhihu.com',
+  'xiaohongshu.com',
+  'www.xiaohongshu.com',
+  'www.jianshu.com',
+  'medium.com',
+  'www.36kr.com',
+  'www.infoq.cn',
+  'www.cnblogs.com',
+  'blog.csdn.net',
+];
+
+/** 域名是否在白名单（允许 www 前缀的有无互相命中） */
+function hostAllowed(host: string): boolean {
+  const h = host.toLowerCase();
+  return ALLOWED_HOSTS.some((a) => a === h || a === `www.${h}` || `www.${a}` === h);
+}
+
+/**
+ * 文章抓取代理（仅开发环境）。生产环境由 nginx 反代同一个路径
+ * /yimark/api/fetch 实现，两侧约定一致：只放行白名单域名，其余一律 403，
+ * 避免开放代理被滥用。
+ */
+function articleProxyPlugin(): Plugin {
   return {
-    name: 'wechat-article-proxy',
+    name: 'article-import-proxy',
     configureServer(server) {
       server.middlewares.use('/yimark/api/fetch', (req, res) => {
         const reply = (code: number, msg: string) => {
@@ -97,15 +127,17 @@ function wechatProxyPlugin(): Plugin {
         const target = String(req.headers['x-target-url'] ?? '');
         try {
           const u = new URL(target);
-          if (u.hostname !== 'mp.weixin.qq.com' || u.protocol !== 'https:') return reply(403, 'only https://mp.weixin.qq.com allowed');
+          if (u.protocol !== 'https:') return reply(403, 'only https allowed');
+          if (!hostAllowed(u.hostname)) return reply(403, `only allow-listed hosts allowed: ${u.hostname}`);
           void fetch(u, {
             headers: {
-              // 微信对无浏览器 UA 的请求会直接返回环境异常页
+              // 各站点对无浏览器 UA 的请求多会拦截或降级
               'User-Agent':
                 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
-              Referer: 'https://mp.weixin.qq.com/',
+              Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
               'Accept-Language': 'zh-CN,zh;q=0.9',
             },
+            redirect: 'follow',
           })
             .then(async (up) => {
               res.statusCode = up.status;
@@ -171,7 +203,7 @@ function vendorChunk(id: string): string | undefined {
 }
 
 export default defineConfig({
-  plugins: [react(), wechatProxyPlugin(), shareStubPlugin()],
+  plugins: [react(), articleProxyPlugin(), shareStubPlugin()],
   base: './',
   build: {
     // 语法高亮与编辑器语法包都已按需加载，剩下的主包应远低于该阈值

@@ -39,7 +39,7 @@ export default function WechatImportDialog({ open, onClose, onImport }: Props) {
   const submit = async () => {
     if (busy) return;
     if (!url.trim()) {
-      setError('请先粘贴公众号文章链接');
+      setError('请先粘贴文章链接');
       return;
     }
     setError(null);
@@ -72,7 +72,7 @@ export default function WechatImportDialog({ open, onClose, onImport }: Props) {
         <input
           ref={inputRef}
           className="wechat-dialog-input"
-          placeholder="粘贴 mp.weixin.qq.com 文章链接"
+          placeholder="粘贴文章链接（公众号 / 掘金 / 知乎 / 少数派…）"
           value={url}
           disabled={busy}
           spellCheck={false}
