@@ -375,13 +375,18 @@ export default function App() {
     }
   };
 
-  /** 新建草稿；在文件夹里点「+」时落到该文件夹内 */
-  const handleNewDraft = () => {
+  /** 新建草稿；folderId 来自「在哪个文件夹里点的 +」，不传则落在根层 */
+  const handleNewDraft = (folderId?: string) => {
     const id = `draft-${Date.now()}`;
     const name = `草稿 ${drafts.length + 1}`;
-    setDrafts((prev) => [...prev, { id, name, content: '', updatedAt: Date.now() }]);
+    // 文件夹可能在别处已被删掉，落点要校验，否则新草稿会带着失效 id 消失
+    const target = folderId ? folders.find((f) => f.id === folderId) : undefined;
+    setDrafts((prev) => [
+      ...prev,
+      { id, name, content: '', updatedAt: Date.now(), ...(target ? { folderId: target.id } : {}) },
+    ]);
     setActiveDraft(id); // 内部已写入 STORAGE_ACTIVE_DRAFT
-    flash(`已新建「${name}」`);
+    flash(target ? `已在「${target.name}」新建「${name}」` : `已新建「${name}」`);
   };
 
   /** 新建文件夹，名称按「新建文件夹 N」递增，避免重名 */

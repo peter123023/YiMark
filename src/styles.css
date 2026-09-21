@@ -569,16 +569,33 @@ button {
   transform: translateY(-50%) translateX(0);
 }
 
+/* 反向停靠：贴着面板右缘的按钮（如折叠按钮）向左弹。
+   面板本身 overflow:hidden，向右弹会被裁掉一半文案 */
+[data-tip-side='left']::after {
+  left: auto;
+  right: calc(100% + 8px);
+  transform: translateY(-50%) translateX(3px);
+}
+
+[data-tip-side='left']:hover::after,
+[data-tip-side='left']:focus-visible::after {
+  transform: translateY(-50%) translateX(0);
+}
+
 /* 窄屏：文件树变成横向条带，提示改到下方，避免顶出屏幕右边 */
 @media (max-width: 900px) {
-  [data-tip]::after {
+  [data-tip]::after,
+  [data-tip-side='left']::after {
     left: 50%;
+    right: auto;
     top: calc(100% + 8px);
     transform: translateX(-50%) translateY(-3px);
   }
 
   [data-tip]:hover::after,
-  [data-tip]:focus-visible::after {
+  [data-tip]:focus-visible::after,
+  [data-tip-side='left']:hover::after,
+  [data-tip-side='left']:focus-visible::after {
     transform: translateX(-50%) translateY(0);
   }
 }
@@ -601,10 +618,19 @@ button {
   font-weight: 600;
   letter-spacing: 1.1px;
   color: var(--muted);
+  /* 两个新建按钮要贴在旁边，标题自己别被压扁 */
+  flex: none;
+}
+
+/* 两个新建按钮贴着「文件」排，所以间距不再靠 margin-left:auto，
+   而是整组靠右端（.tree-head-actions）往折叠按钮处顶 */
+.tree-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
 }
 
 .tree-new {
-  margin-left: auto;
   width: 24px;
   height: 24px;
   border: none;
@@ -623,9 +649,11 @@ button {
   color: var(--accent-strong);
 }
 
-/* 折叠/展开按钮：和「新建草稿」同尺寸同配色，保持标题栏节奏一致 */
+/* 折叠/展开按钮：和「新建草稿」同尺寸同配色，保持标题栏节奏一致；
+   margin-left:auto 让它独占右端，新建按钮组自然被推到「文件」旁边 */
 .tree-collapse {
   flex: none;
+  margin-left: auto;
   width: 24px;
   height: 24px;
   border: none;

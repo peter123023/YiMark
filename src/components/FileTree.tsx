@@ -37,7 +37,8 @@ interface Props {
   folders: Folder[];
   activeId: string;
   onSelect: (id: string) => void;
-  onNew: () => void;
+  /** 新建草稿；传 folderId 表示建在该文件夹内，不传则落在根层「草稿」 */
+  onNew: (folderId?: string) => void;
   onRename: (id: string, name: string) => void;
   onDelete: (id: string) => void;
   /** 新建文件夹 */
@@ -58,6 +59,7 @@ interface Props {
   collapsed: boolean;
   onToggleCollapsed: () => void;
 }
+
 
 /** 相对时间：列表里比绝对时间戳更好读 */
 function relativeTime(ts: number, now: number): string {
@@ -319,19 +321,33 @@ export default function FileTree({
     <nav className={`file-tree ${collapsed ? 'collapsed' : ''}`} aria-label="文件">
       <div className="tree-head">
         {!collapsed && <span className="tree-head-label">文件</span>}
+        {/* 两个新建按钮紧跟在「文件」旁边，折叠按钮独占右端 */}
         {!collapsed && (
-          <button className="tree-new" data-tip="新建草稿" aria-label="新建草稿" onClick={onNew}>
-            <FilePlus size={14} />
-          </button>
-        )}
-        {!collapsed && (
-          <button className="tree-new" data-tip="新建文件夹" aria-label="新建文件夹" onClick={onNewFolder}>
-            <FolderPlus size={14} />
-          </button>
+          <span className="tree-head-actions">
+            <button
+              className="tree-new"
+              data-tip="新建草稿"
+              data-tip-side="right"
+              aria-label="新建草稿"
+              onClick={() => onNew()}
+            >
+              <FilePlus size={14} />
+            </button>
+            <button
+              className="tree-new"
+              data-tip="新建文件夹"
+              data-tip-side="right"
+              aria-label="新建文件夹"
+              onClick={onNewFolder}
+            >
+              <FolderPlus size={14} />
+            </button>
+          </span>
         )}
         <button
           className="tree-collapse"
           data-tip={collapsed ? '展开文件面板' : '收起文件面板'}
+          data-tip-side="left"
           aria-label={collapsed ? '展开文件面板' : '收起文件面板'}
           aria-expanded={!collapsed}
           onClick={onToggleCollapsed}
@@ -350,6 +366,7 @@ export default function FileTree({
                 key={d.id}
                 className={`tree-rail-item ${active ? 'active' : ''}`}
                 data-tip={d.name}
+                data-tip-side="right"
                 aria-label={d.name}
                 aria-selected={active}
                 role="treeitem"
@@ -430,6 +447,13 @@ export default function FileTree({
                       <span className="tree-count">{items.length}</span>
                     </button>
                     <span className="tree-file-actions">
+                      <button
+                        title="在此文件夹新建草稿"
+                        aria-label={`在文件夹 ${f.name} 内新建草稿`}
+                        onClick={() => onNew(f.id)}
+                      >
+                        <FilePlus size={12} />
+                      </button>
                       <button
                         title="重命名文件夹"
                         aria-label={`重命名文件夹 ${f.name}`}
