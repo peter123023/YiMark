@@ -1076,7 +1076,7 @@ button {
   align-items: stretch;
 }
 
-/* 拖拽条（一小段分割线常显，hover/拖拽时高亮加长） */
+/* 拖拽条（分割线本身不显示，hover/拖拽时才亮起，提示这里可以拖） */
 .split-bar {
   flex: none;
   width: 16px;
@@ -1093,7 +1093,9 @@ button {
   width: 3px;
   height: 44px;
   border-radius: 999px;
-  background: rgba(var(--tint), 0.18);
+  /* 常显小竖线已去掉：平时占着视觉却没人靠它定位。
+     条体保留（拖拽分栏靠它），透明待命，hover 时下面的高亮规则接管 */
+  background: transparent;
 }
 
 .split-bar:hover::after,
