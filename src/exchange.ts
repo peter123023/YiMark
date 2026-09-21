@@ -7,7 +7,7 @@
  * - 全量 `.zip`：草稿 + 图片原始文件 + manifest.json，可以完整导回
  */
 
-import type { Draft } from './components/FileTree';
+import type { Draft, Folder } from './components/FileTree';
 import { createZip, readZip, type ZipEntry } from './zip';
 
 /** 备份包结构版本；将来改格式靠它区分 */
@@ -18,13 +18,16 @@ interface Manifest {
   app: string;
   version: number;
   exportedAt: number;
-  drafts: { id: string; name: string; file: string; updatedAt: number }[];
+  drafts: { id: string; name: string; file: string; updatedAt: number; folderId?: string }[];
   images: { name: string; file: string; mime: string }[];
+  /** 文件夹（v1 起）；老备份包没有这个字段，读取时兜底为空数组 */
+  folders?: Folder[];
 }
 
-/** 导入结果：草稿与图片分开交给调用方合并 */
+/** 导入结果：草稿、文件夹与图片分开交给调用方合并 */
 export interface ImportResult {
   drafts: Draft[];
+  folders: Folder[];
   images: Record<string, string>;
   /** 无法识别的文件名 */
   skipped: string[];
@@ -130,7 +133,11 @@ export function exportDraftMarkdown(draft: Draft): void {
  * 导出全量备份 zip。
  * 草稿文件名带序号前缀，保证解压后顺序与列表一致、且重名不互相覆盖。
  */
-export async function exportBackupZip(drafts: Draft[], images: Record<string, string>): Promise<void> {
+export async function exportBackupZip(
+  drafts: Draft[],
+  images: Record<string, string>,
+  folders: Folder[] = [],
+): Promise<void> {
   const enc = new TextEncoder();
   const entries: ZipEntry[] = [];
   const manifest: Manifest = {
@@ -139,12 +146,14 @@ export async function exportBackupZip(drafts: Draft[], images: Record<string, st
     exportedAt: Date.now(),
     drafts: [],
     images: [],
+    folders,
   };
 
   drafts.forEach((d, i) => {
+    // 文件夹归属记进 manifest 而不是目录结构：md 文件保持平铺，外部工具好读
     const file = `drafts/${String(i + 1).padStart(2, '0')}-${safeFileName(d.name)}.md`;
     entries.push({ name: file, data: enc.encode(d.content) });
-    manifest.drafts.push({ id: d.id, name: d.name, file, updatedAt: d.updatedAt });
+    manifest.drafts.push({ id: d.id, name: d.name, file, updatedAt: d.updatedAt, folderId: d.folderId });
   });
 
   for (const [name, dataUrl] of Object.entries(images)) {
@@ -173,11 +182,17 @@ function newDraftId(): string {
   return `draft-${Date.now()}-${idSeq}`;
 }
 
+/** 生成不重复的文件夹 id */
+function newFolderId(): string {
+  idSeq += 1;
+  return `folder-${Date.now()}-${idSeq}`;
+}
+
 async function importBackupZip(file: File): Promise<ImportResult> {
   const entries = await readZip(file);
   const byName = new Map(entries.map((e) => [e.name, e.data]));
   const dec = new TextDecoder();
-  const result: ImportResult = { drafts: [], images: {}, skipped: [] };
+  const result: ImportResult = { drafts: [], folders: [], images: {}, skipped: [] };
 
   const manifestBytes = byName.get(MANIFEST);
   const manifest: Manifest | null = manifestBytes
@@ -185,6 +200,14 @@ async function importBackupZip(file: File): Promise<ImportResult> {
     : null;
 
   if (manifest) {
+    // 文件夹 id 也要重编：导入是「追加」，沿用原 id 会和现有文件夹冲突
+    const folderMap = new Map<string, string>();
+    for (const f of manifest.folders ?? []) {
+      if (!f?.id || !f.name) continue;
+      const nid = newFolderId();
+      folderMap.set(f.id, nid);
+      result.folders.push({ id: nid, name: f.name });
+    }
     for (const d of manifest.drafts) {
       const data = byName.get(d.file);
       if (!data) {
@@ -196,6 +219,8 @@ async function importBackupZip(file: File): Promise<ImportResult> {
         name: d.name,
         content: dec.decode(data),
         updatedAt: d.updatedAt || Date.now(),
+        // 归属的文件夹若不在本次导入内，就落到根层
+        folderId: d.folderId ? folderMap.get(d.folderId) : undefined,
       });
     }
     for (const img of manifest.images) {
@@ -234,12 +259,13 @@ async function importBackupZip(file: File): Promise<ImportResult> {
  * `.zip` 按备份包整体还原。返回的草稿与图片由调用方决定怎么合并。
  */
 export async function importFiles(files: File[]): Promise<ImportResult> {
-  const merged: ImportResult = { drafts: [], images: {}, skipped: [] };
+  const merged: ImportResult = { drafts: [], folders: [], images: {}, skipped: [] };
   for (const file of files) {
     if (/\.zip$/i.test(file.name)) {
       try {
         const part = await importBackupZip(file);
         merged.drafts.push(...part.drafts);
+        merged.folders.push(...part.folders);
         Object.assign(merged.images, part.images);
         merged.skipped.push(...part.skipped);
       } catch (err) {

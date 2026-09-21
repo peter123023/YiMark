@@ -1,6 +1,6 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import EditorPane from './components/EditorPane';
-import FileTree from './components/FileTree';
+import FileTree, { ROOT_FOLDER_ID, type Draft, type Folder } from './components/FileTree';
 import PreviewPane from './components/PreviewPane';
 import Toolbar from './components/Toolbar';
 import WechatImportDialog from './components/WechatImportDialog';
@@ -29,6 +29,8 @@ const STORAGE_KEY = 'yimark:md';
 const STORAGE_THEME = 'yimark:theme';
 const STORAGE_DENSITY = 'yimark:density';
 const STORAGE_DRAFTS = 'yimark:drafts';
+/** 文件夹列表（单层，只存 id + name；归属关系记在草稿的 folderId 上） */
+const STORAGE_FOLDERS = 'yimark:folders';
 const STORAGE_ACTIVE_DRAFT = 'yimark:active-draft';
 /** 左侧文件面板是否收起 */
 const STORAGE_TREE_COLLAPSED = 'yimark:tree-collapsed';
@@ -68,13 +70,6 @@ const MIN_EDITOR_PX = 180;
 /** 预览最小宽度（容纳真实手机宽度） */
 const MIN_PREVIEW_PX = 430;
 
-interface Draft {
-  id: string;
-  name: string;
-  content: string;
-  updatedAt: number;
-}
-
 /** 读草稿列表（localStorage） */
 function loadDrafts(): Draft[] {
   try {
@@ -85,6 +80,20 @@ function loadDrafts(): Draft[] {
     }
   } catch {
     // 损坏则重建
+  }
+  return [];
+}
+
+/** 读文件夹列表（localStorage）；旧数据没有这个 key，返回空数组即可 */
+function loadFolders(): Folder[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_FOLDERS);
+    if (raw) {
+      const parsed = JSON.parse(raw) as Folder[];
+      if (Array.isArray(parsed)) return parsed.filter((f) => f && f.id && f.name);
+    }
+  } catch {
+    // 损坏则视为无文件夹
   }
   return [];
 }
@@ -136,6 +145,7 @@ function initDraftState(): { drafts: Draft[]; activeId: string } {
 export default function App() {
   const [initial] = useState(initDraftState);
   const [drafts, setDrafts] = useState<Draft[]>(initial.drafts);
+  const [folders, setFolders] = useState<Folder[]>(loadFolders);
   const [activeDraftId, setActiveDraftId] = useState<string>(initial.activeId);
   // 选中项兜底：id 万一失效就回落到第一篇，且后续写入都用这个真实存在的 id
   const activeDraft = drafts.find((d) => d.id === activeDraftId) ?? drafts[0];
@@ -291,6 +301,15 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [drafts]);
 
+  // 文件夹列表落盘（体量很小，无需防抖）
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_FOLDERS, JSON.stringify(folders));
+    } catch {
+      // 存储失败（隐私模式等）不影响当次使用
+    }
+  }, [folders]);
+
   // 记住主题与密度
   useEffect(() => {
     localStorage.setItem(STORAGE_THEME, theme.id);
@@ -356,13 +375,58 @@ export default function App() {
     }
   };
 
-  /** 新建草稿 */
+  /** 新建草稿；在文件夹里点「+」时落到该文件夹内 */
   const handleNewDraft = () => {
     const id = `draft-${Date.now()}`;
     const name = `草稿 ${drafts.length + 1}`;
     setDrafts((prev) => [...prev, { id, name, content: '', updatedAt: Date.now() }]);
     setActiveDraft(id); // 内部已写入 STORAGE_ACTIVE_DRAFT
     flash(`已新建「${name}」`);
+  };
+
+  /** 新建文件夹，名称按「新建文件夹 N」递增，避免重名 */
+  const handleNewFolder = () => {
+    const id = `folder-${Date.now()}`;
+    let n = folders.length + 1;
+    const taken = new Set(folders.map((f) => f.name));
+    while (taken.has(`新建文件夹 ${n}`)) n += 1;
+    const name = `新建文件夹 ${n}`;
+    setFolders((prev) => [...prev, { id, name }]);
+    flash(`已新建文件夹「${name}」`);
+  };
+
+  /** 重命名文件夹 */
+  const handleRenameFolder = (id: string, name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    setFolders((prev) => prev.map((f) => (f.id === id ? { ...f, name: trimmed } : f)));
+  };
+
+  /**
+   * 删除文件夹：只删分组本身，里面的草稿移回顶层。
+   * 连草稿一起删太危险 —— 用户多半只是想取消分组。
+   */
+  const handleDeleteFolder = (id: string) => {
+    const target = folders.find((f) => f.id === id);
+    if (!target) return;
+    const count = drafts.filter((d) => d.folderId === id).length;
+    const extra = count ? `其中的 ${count} 篇草稿会移回顶层，不会丢失。` : '文件夹内没有草稿。';
+    if (!window.confirm(`删除文件夹「${target.name}」？${extra}`)) return;
+    setFolders((prev) => prev.filter((f) => f.id !== id));
+    setDrafts((prev) => prev.map((d) => (d.folderId === id ? { ...d, folderId: undefined } : d)));
+    flash(`已删除文件夹「${target.name}」`);
+  };
+
+  /** 移动草稿到文件夹（ROOT_FOLDER_ID 表示移回顶层） */
+  const handleMoveDraft = (draftId: string, folderId: string) => {
+    const root = folderId === ROOT_FOLDER_ID;
+    const target = folders.find((f) => f.id === folderId);
+    if (!root && !target) return;
+    setDrafts((prev) =>
+      prev.map((d) => (d.id === draftId ? { ...d, folderId: root ? undefined : folderId } : d)),
+    );
+    const draft = drafts.find((d) => d.id === draftId);
+    if (draft) flash(root ? `「${draft.name}」已移回顶层` : `「${draft.name}」已移到「${target!.name}」`);
   };
 
   /** 重命名草稿 */
@@ -479,12 +543,14 @@ export default function App() {
   /** 导入 .md / .zip：草稿追加到列表末尾并跳过去，图片并入图片库 */
   const handleImport = async (files: File[]) => {
     try {
-      const { drafts: incoming, images: incomingImages, skipped } = await importFiles(files);
+      const { drafts: incoming, folders: incomingFolders, images: incomingImages, skipped } =
+        await importFiles(files);
       const imageCount = Object.keys(incomingImages).length;
       if (!incoming.length && !imageCount) {
         flash(skipped.length ? '没有可导入的 Markdown 或备份文件' : '文件是空的');
         return;
       }
+      if (incomingFolders.length) setFolders((prev) => [...prev, ...incomingFolders]);
       if (incoming.length) {
         setDrafts((prev) => [...prev, ...incoming]);
         setActiveDraft(incoming[0].id);
@@ -549,8 +615,10 @@ export default function App() {
   const handleExportBackup = async () => {
     setExporting(true);
     try {
-      await exportBackupZip(drafts, images);
-      flash(`已导出备份（${drafts.length} 篇草稿 · ${Object.keys(images).length} 张图片）`);
+      await exportBackupZip(drafts, images, folders);
+      flash(
+        `已导出备份（${drafts.length} 篇草稿${folders.length ? ` · ${folders.length} 个文件夹` : ''} · ${Object.keys(images).length} 张图片）`,
+      );
     } catch (err) {
       console.warn('备份失败', err);
       flash('备份导出失败');
@@ -680,11 +748,16 @@ export default function App() {
       <main className={`workspace ${isPreviewOnly ? 'mode-preview' : ''}`}>
         <FileTree
           drafts={drafts}
+          folders={folders}
           activeId={activeId}
           onSelect={setActiveDraft}
           onNew={handleNewDraft}
           onRename={handleRenameDraft}
           onDelete={handleDeleteDraft}
+          onNewFolder={handleNewFolder}
+          onRenameFolder={handleRenameFolder}
+          onDeleteFolder={handleDeleteFolder}
+          onMoveDraft={handleMoveDraft}
           images={images}
           usedImageNames={usedImageNames}
           onDeleteImage={handleDeleteImage}
