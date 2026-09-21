@@ -576,7 +576,21 @@ button {
   transform: translateY(-50%) translateX(0);
 }
 
-/* 反向停靠：贴着面板右缘的按钮（如折叠按钮）向左弹。
+/* 两侧停靠都显式声明。基础样式 [data-tip]::after 已经是向右，
+   但这里仍然写全 data-tip-side='right'，避免它变成一个「看着有用、
+   实际不生效」的空属性 —— 后续改动 base 时不会静默错位。 */
+[data-tip-side='right']::after {
+  left: calc(100% + 8px);
+  right: auto;
+  transform: translateY(-50%) translateX(-3px);
+}
+
+[data-tip-side='right']:hover::after,
+[data-tip-side='right']:focus-visible::after {
+  transform: translateY(-50%) translateX(0);
+}
+
+/* 反向停靠：贴着面板右缘的按钮（如展开态的折叠按钮）向左弹。
    面板本身 overflow:hidden，向右弹会被裁掉一半文案 */
 [data-tip-side='left']::after {
   left: auto;
@@ -592,7 +606,8 @@ button {
 /* 窄屏：文件树变成横向条带，提示改到下方，避免顶出屏幕右边 */
 @media (max-width: 900px) {
   [data-tip]::after,
-  [data-tip-side='left']::after {
+  [data-tip-side='left']::after,
+  [data-tip-side='right']::after {
     left: 50%;
     right: auto;
     top: calc(100% + 8px);
@@ -602,7 +617,9 @@ button {
   [data-tip]:hover::after,
   [data-tip]:focus-visible::after,
   [data-tip-side='left']:hover::after,
-  [data-tip-side='left']:focus-visible::after {
+  [data-tip-side='left']:focus-visible::after,
+  [data-tip-side='right']:hover::after,
+  [data-tip-side='right']:focus-visible::after {
     transform: translateX(-50%) translateY(0);
   }
 }

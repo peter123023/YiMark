@@ -347,7 +347,9 @@ export default function FileTree({
         <button
           className="tree-collapse"
           data-tip={collapsed ? '展开文件面板' : '收起文件面板'}
-          data-tip-side="left"
+          /* 展开态按钮贴着面板右缘，向右弹会被 overflow:hidden 裁掉，只能向左；
+             收起态按钮在窄栏中间，不靠近任何裁剪边界，应向右弹到面板外 */
+          data-tip-side={collapsed ? 'right' : 'left'}
           aria-label={collapsed ? '展开文件面板' : '收起文件面板'}
           aria-expanded={!collapsed}
           onClick={onToggleCollapsed}
