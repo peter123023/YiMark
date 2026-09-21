@@ -222,7 +222,7 @@ export default function Toolbar({
         </button>
         <button className="btn" onClick={onWechatImport} title="从公众号文章导入：粘贴 mp.weixin.qq.com 链接">
           <LinkSimple size={15} weight="bold" />
-          公众号
+          公众号文章导入
         </button>
         <button className="btn" onClick={onShare} title="生成公开阅读链接，任何人可读">
           <PaperPlaneTilt size={15} weight="bold" />
