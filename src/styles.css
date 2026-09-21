@@ -482,6 +482,13 @@ button {
   border-bottom: none;
 }
 
+/* 收起态必须清掉折叠按钮的 auto 外边距：auto 会先吃掉全部剩余空间，
+   让上面的 justify-content:center 彻底失效，按钮被顶到右边缘贴边。
+   这里归零后由标题栏自己居中 */
+.file-tree.collapsed .tree-collapse {
+  margin-left: 0;
+}
+
 /* 收起态的草稿图标列：窄栏里唯一的内容，点击即可切换草稿 */
 .tree-rail {
   flex: 1;
